@@ -31,24 +31,17 @@ const GRID = {
 
 type CellTarget = { gx: number; gy: number; points: number; hit: boolean };
 
+/** All bottle positions (3-2-3 on 7 columns); every pillar can be rung for points */
 const TARGET_CELLS: CellTarget[] = [
-  { gx: 2, gy: 3, points: 10, hit: false },
+  { gx: 1, gy: 4, points: 15, hit: false },
   { gx: 4, gy: 4, points: 20, hit: false },
   { gx: 5, gy: 4, points: 30, hit: false },
+  { gx: 7, gy: 4, points: 15, hit: false },
+  { gx: 2, gy: 3, points: 10, hit: false },
+  { gx: 6, gy: 3, points: 15, hit: false },
+  { gx: 1, gy: 2, points: 15, hit: false },
+  { gx: 4, gy: 2, points: 20, hit: false },
   { gx: 7, gy: 2, points: 25, hit: false },
-];
-
-/** Decorative bottle layout (3-2-3 on 7 columns) plus target cells */
-const BOTTLE_CELLS: { gx: number; gy: number }[] = [
-  { gx: 1, gy: 4 },
-  { gx: 4, gy: 4 },
-  { gx: 5, gy: 4 },
-  { gx: 7, gy: 4 },
-  { gx: 2, gy: 3 },
-  { gx: 6, gy: 3 },
-  { gx: 1, gy: 2 },
-  { gx: 4, gy: 2 },
-  { gx: 7, gy: 2 },
 ];
 
 const SHELF_ROWS = [4, 3, 2] as const;
@@ -87,6 +80,8 @@ function resetTargets(): CellTarget[] {
   return TARGET_CELLS.map((t) => ({ ...t, hit: false }));
 }
 
+const RING_LAND_Y_OFFSET = 12;
+
 function gridToCanvas(gx: number, gy: number): { x: number; y: number } {
   const tX = (gx - 1) / (GRID_COLS - 1);
   const tY = (gy - 1) / (GRID_ROWS - 1);
@@ -94,6 +89,11 @@ function gridToCanvas(gx: number, gy: number): { x: number; y: number } {
   const left = GRID.leftBottom + tY * (GRID.leftTop - GRID.leftBottom);
   const right = GRID.rightBottom + tY * (GRID.rightTop - GRID.rightBottom);
   return { x: left + tX * (right - left), y };
+}
+
+function ringLandAt(gx: number, gy: number): { x: number; y: number } {
+  const { x, y } = gridToCanvas(gx, gy);
+  return { x, y: y - RING_LAND_Y_OFFSET };
 }
 
 function createRing(): Ring {
@@ -219,24 +219,25 @@ function drawGrid(
 
   drawShelves(ctx);
 
-  for (const { gx, gy } of BOTTLE_CELLS) {
+  for (const { gx, gy, hit } of targets) {
     const { x, y } = gridToCanvas(gx, gy);
-    const target = targets.find((t) => t.gx === gx && t.gy === gy);
-    drawBottle(ctx, x, y, Boolean(target?.hit));
+    drawBottle(ctx, x, y, hit);
   }
 
   for (let gy = GRID_ROWS; gy >= 1; gy--) {
     for (let gx = 1; gx <= GRID_COLS; gx++) {
       const colHL = hlX === gx;
       const rowHL = hlY === gy;
+      const isBottle = targets.some((t) => t.gx === gx && t.gy === gy);
       const cellHL =
-        (aim.phase === "x" && colHL) ||
-        (aim.phase === "y" && aim.lockedX === gx && rowHL) ||
-        (aim.phase === "flying" && aim.lockedX === gx && aim.lockedY === gy);
+        isBottle &&
+        ((aim.phase === "x" && colHL) ||
+          (aim.phase === "y" && aim.lockedX === gx && rowHL) ||
+          (aim.phase === "flying" && aim.lockedX === gx && aim.lockedY === gy));
 
       if (!cellHL) continue;
 
-      const { x, y } = gridToCanvas(gx, gy);
+      const { x, y } = ringLandAt(gx, gy);
       ctx.fillStyle = "rgba(163, 163, 163, 0.22)";
       ctx.beginPath();
       ctx.arc(x, y - 12, 30, 0, Math.PI * 2);
@@ -245,9 +246,9 @@ function drawGrid(
   }
 
   const { gx: aimGx, gy: aimGy } = aimGridPosition(aim);
-  const aimPos = gridToCanvas(aimGx, aimGy);
+  const aimPos = ringLandAt(aimGx, aimGy);
   if (aim.phase !== "flying") {
-    drawCrosshair(ctx, aimPos.x, aimPos.y - 12);
+    drawCrosshair(ctx, aimPos.x, aimPos.y);
   }
 }
 
@@ -345,7 +346,7 @@ export default function RingTossGame() {
   const launchToCell = useCallback(
     (gx: number, gy: number) => {
       const ring = ringRef.current;
-      const target = gridToCanvas(gx, gy);
+      const target = ringLandAt(gx, gy);
       ring.fromX = ring.x;
       ring.fromY = ring.y;
       ring.toX = target.x;
