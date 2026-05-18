@@ -27,6 +27,12 @@ export default function Home() {
           >
             彈珠台遊戲
           </Link>
+          <Link
+            href="/catchfish"
+            className="block w-full rounded-xl bg-cyan-500 py-3 text-center text-lg font-bold text-zinc-900 transition hover:bg-cyan-400"
+          >
+            撈金魚遊戲
+          </Link>
         </div>
       </div>
     </div>
