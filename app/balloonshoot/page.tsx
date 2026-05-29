@@ -1,12 +1,12 @@
 import GameShell from "@/components/game/GameShell";
-import PinballGame from "./PinballGame";
+import BalloonShootGame from "./BalloonShootGame";
 import { narrativeDefault } from "@/data/narrative-default";
 
-export default function PinballPage() {
-  const script = narrativeDefault.stalls.pinball;
+export default function BalloonShootPage() {
+  const script = narrativeDefault.stalls.balloonshoot;
   return (
     <GameShell title={script.title}>
-      <PinballGame />
+      <BalloonShootGame />
     </GameShell>
   );
 }

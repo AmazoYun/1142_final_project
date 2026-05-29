@@ -1,2 +1,83 @@
 @import "tailwindcss";
 
+@theme inline {
+  --animate-sway: sway 6s ease-in-out infinite;
+  --animate-fade-in: fade-in 0.4s ease-out;
+}
+
+@keyframes sway {
+  0%,
+  100% {
+    transform: translateX(0) scale(1.02);
+  }
+  50% {
+    transform: translateX(6px) scale(1.02);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* 統一遊戲 UI */
+.game-header {
+  background: linear-gradient(180deg, #1a1510 0%, #0d0b09 100%);
+  border-bottom: 1px solid rgba(251, 191, 36, 0.25);
+  color: #f5e6c8;
+}
+
+.game-title {
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: #fcd34d;
+  text-shadow: 0 0 20px rgba(251, 191, 36, 0.3);
+}
+
+.game-panel {
+  background: rgba(12, 10, 8, 0.92);
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  border-radius: 12px;
+  color: #e7e5e4;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+.game-caption {
+  background: rgba(0, 0, 0, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  color: #fafaf9;
+}
+
+.game-btn-primary {
+  background: linear-gradient(180deg, #fbbf24 0%, #d97706 100%);
+  color: #1c1917;
+  font-weight: 700;
+  padding: 0.5rem 1.25rem;
+  border-radius: 8px;
+  border: 1px solid #fcd34d;
+  transition: filter 0.15s;
+}
+
+.game-btn-primary:hover {
+  filter: brightness(1.08);
+}
+
+.game-btn-ghost {
+  background: rgba(255, 255, 255, 0.06);
+  color: #e7e5e4;
+  font-weight: 600;
+  padding: 0.4rem 1rem;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  transition: background 0.15s;
+}
+
+.game-btn-ghost:hover {
+  background: rgba(255, 255, 255, 0.12);
+}

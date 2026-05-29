@@ -1,7 +1,6 @@
 "use client";
 
 import { Ma_Shan_Zheng } from "next/font/google";
-import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 const coupletFont = Ma_Shan_Zheng({ weight: "400", subsets: ["latin"] });
@@ -469,7 +468,7 @@ export default function RingTossGame() {
         : "";
 
   return (
-    <div className="flex min-h-screen w-full bg-white">
+    <div className="flex min-h-full w-full bg-white">
       <aside className="flex w-14 shrink-0 items-center justify-center bg-[#e8e8e8] sm:w-16 md:w-20 lg:w-24">
         <p
           className={`${coupletFont.className} text-lg tracking-widest text-neutral-600 sm:text-xl`}
@@ -479,17 +478,8 @@ export default function RingTossGame() {
         </p>
       </aside>
 
-      <main className="flex min-h-screen min-w-0 flex-1 flex-col">
-        <header className="flex shrink-0 items-center justify-between px-3 py-3 sm:px-5">
-          <Link
-            href="/"
-            className={`${coupletFont.className} flex items-center gap-1 text-lg text-neutral-800 transition-opacity hover:opacity-70 sm:text-xl`}
-          >
-            <span aria-hidden className="text-base leading-none">
-              ◀
-            </span>
-            返回
-          </Link>
+      <main className="flex min-h-full min-w-0 flex-1 flex-col">
+        <header className="flex shrink-0 items-center justify-end px-3 py-3 sm:px-5">
           <div className="flex items-center gap-2 text-neutral-800">
             <span
               aria-hidden
