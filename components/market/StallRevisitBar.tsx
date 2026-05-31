@@ -14,9 +14,9 @@ export default function StallRevisitBar({ stallId }: Props) {
   const script = narrativeDefault.stalls[stallId];
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-40 pointer-events-none px-4 pb-5 pt-10 bg-gradient-to-t from-black/95 via-black/80 to-transparent">
+    <div className="game-bottom-bar fixed bottom-0 left-0 right-0 z-40 pointer-events-none px-4 pb-5">
       <div className="pointer-events-auto mx-auto flex max-w-lg flex-col items-center gap-3">
-        <p className="text-sm font-medium text-amber-100/90">{script.title}</p>
+        <p className="game-panel px-4 py-2 text-sm tracking-widest">{script.title}</p>
         <button
           type="button"
           className="game-btn-primary min-w-[160px]"

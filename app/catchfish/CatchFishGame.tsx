@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useSyncExternalStore } from "react";
+import GameHudBar, { GameHudExtraStat } from "@/components/game/GameHudBar";
 import {
   durabilityCostForPoints,
   FISH_SIZE_CONFIG,
@@ -525,28 +526,37 @@ export default function CatchFishGame() {
 
   // ----- 區塊 F：JSX 版型；子區塊註解標為 F1、F2a…F3，對應原型圖各區域 -----
   return (
-    <div className="min-h-full bg-neutral-100 text-neutral-900">
+    <div className="min-h-full game-stage-shell">
       <div className="min-h-full flex flex-col p-4 md:p-6">
-        {/* F2. 主版型：flex 橫向五欄（春聯 | 圓池 | 資訊方塊 | 春聯） */}
+        <div className="mb-3 shrink-0">
+          <GameHudBar
+            score={score}
+            resource={netsRemaining}
+            resourceLabel="撈網"
+            extra={
+              <GameHudExtraStat
+                label="本次"
+                value={lastCatchPoints > 0 ? lastCatchPoints : "—"}
+                accent
+              />
+            }
+          />
+        </div>
+
         <div className="flex flex-1 gap-4 md:gap-6 items-stretch min-h-0 justify-center">
-          {/* F2a. 左側文字框：灰底直書，日後可替換為春聯 API／props 文字 */}
-          <aside
-            className="hidden md:flex w-14 lg:w-16 shrink-0 bg-neutral-300 rounded-sm items-center justify-center"
-            aria-label="左側文字顯示區"
-          >
+          <aside className="game-couplet-aside hidden md:flex" aria-label="左側文字顯示區">
             <p
-              className="text-neutral-600 text-sm tracking-widest"
+              className="text-foreground/60 text-sm tracking-widest"
               style={{ writingMode: "vertical-rl" }}
             >
               這是春聯
             </p>
           </aside>
 
-          {/* F2b. 中央欄：Canvas 圓池 + 絕對定位疊層（耐久、toast、遮罩） */}
           <section className="flex flex-col items-center flex-1 max-w-[min(72vh,640px)] min-w-0">
-            <div className="relative w-full aspect-square max-h-[min(72vh,640px)]">
+            <div className="relative w-full aspect-square max-h-[min(72vh,640px)] game-playfield-frame game-playfield-frame--round">
               {/* 圓形裁切：CSS 圓形遮罩；魚的運動邊界由 arenaRef 數學圓控制 */}
-              <div className="absolute inset-0 rounded-full overflow-hidden bg-neutral-200 shadow-inner">
+              <div className="absolute inset-0 overflow-hidden bg-[#c8c4bc] shadow-inner">
                 <div ref={containerRef} className="w-full h-full">
                   <canvas
                     ref={canvasRef}
@@ -563,7 +573,7 @@ export default function CatchFishGame() {
                 更新時機：每次 onFishCaught 扣耐久後由 Zustand 觸發 re-render
               */}
               <div
-                className="absolute bottom-2 right-2 md:bottom-4 md:right-4 flex items-center gap-1.5 bg-white/90 border border-neutral-300 rounded-lg px-2.5 py-1.5 text-sm font-medium shadow-sm"
+                className="absolute bottom-2 right-2 md:bottom-4 md:right-4 flex items-center gap-1.5 game-overlay-panel px-2.5 py-1.5 text-sm font-medium"
                 aria-live="polite"
                 aria-label={`撈網耐久 ${Math.round(durability)} 百分比`}
               >
@@ -583,7 +593,7 @@ export default function CatchFishGame() {
 
               {/* F2b-2. 換網 toast：store.netReplacedMessage，2.5 秒後 clearNetReplacedMessage */}
               {netReplacedMessage && (
-                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white/95 border border-amber-300 rounded-xl px-4 py-2 text-sm text-amber-900 shadow">
+                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 game-overlay-panel px-4 py-2 text-sm">
                   撈網損壞，已更換新網（剩餘 {netsRemaining} 張）
                 </div>
               )}
@@ -596,27 +606,23 @@ export default function CatchFishGame() {
               */}
               {(!isPlaying || isGameOver) && (
                 <div className="absolute inset-0 rounded-full bg-black/25 flex items-center justify-center">
-                  <div className="bg-white rounded-2xl border border-neutral-200 shadow-lg px-6 py-5 max-w-[90%] text-center">
+                  <div className="game-overlay-panel px-6 py-5 max-w-[90%] text-center">
                     {isGameOver ? (
                       <>
                         <p className="text-lg font-semibold mb-1">遊戲結束</p>
-                        <p className="text-sm text-neutral-600 mb-4">
+                        <p className="text-sm opacity-70 mb-4">
                           撈網已用盡。最終得分：{score}
                         </p>
                       </>
                     ) : (
                       <>
                         <p className="text-lg font-semibold mb-1">撈金魚</p>
-                        <p className="text-sm text-neutral-600 mb-4 leading-relaxed">
+                        <p className="text-sm opacity-70 mb-4 leading-relaxed">
                           移動滑鼠控制撈網（帶慣性延遲）。魚僅在圓池內游動；大魚高分但較耗耐久。
                         </p>
                       </>
                     )}
-                    <button
-                      type="button"
-                      onClick={handleStart}
-                      className="px-5 py-2 rounded-xl bg-neutral-800 text-white font-medium hover:bg-neutral-700"
-                    >
+                    <button type="button" onClick={handleStart} className="game-btn-primary">
                       {isGameOver ? "再玩一次" : "開始遊戲"}
                     </button>
                   </div>
@@ -624,40 +630,14 @@ export default function CatchFishGame() {
               )}
             </div>
 
-            {/* F2b-4. 手機版：春聯側欄隱藏時，在圓池下方顯示體型／分數／撈網提示 */}
-            <p className="md:hidden mt-2 text-xs text-neutral-500 text-center">
+            <p className="md:hidden mt-2 game-message text-center">
               小魚 1~3 分 · 中魚 4~7 分 · 大魚 8~10 分 · 備用撈網 {netsRemaining} 張
             </p>
           </section>
 
-          {/* F2c. 右側資訊方塊堆疊（原型三個圓角正方形，介於圓池與右春聯之間） */}
-          <div className="flex flex-col gap-3 shrink-0 w-16 md:w-20 justify-center" aria-label="遊戲資訊面板">
-            {/* 上方方塊：累計得分 ← store.score */}
-            <div className="aspect-square rounded-2xl bg-neutral-200 border border-neutral-300 flex flex-col items-center justify-center shadow-sm">
-              <span className="text-[10px] text-neutral-500 mb-0.5">得分</span>
-              <span className="text-xl md:text-2xl font-bold tabular-nums">{score}</span>
-            </div>
-            {/* 中間（琥珀色高亮）：上一筆撈魚得分 ← store.lastCatchPoints，無則顯示 — */}
-            <div className="aspect-square rounded-2xl bg-amber-100 border-2 border-amber-300 flex flex-col items-center justify-center shadow-md ring-2 ring-amber-200/80">
-              <span className="text-[10px] text-amber-800 mb-0.5">本次</span>
-              <span className="text-xl md:text-2xl font-bold tabular-nums text-amber-950">
-                {lastCatchPoints > 0 ? lastCatchPoints : "—"}
-              </span>
-            </div>
-            {/* 下方：剩餘撈網張數 ← store.netsRemaining（含使用中，初始 3） */}
-            <div className="aspect-square rounded-2xl bg-neutral-200 border border-neutral-300 flex flex-col items-center justify-center shadow-sm">
-              <span className="text-[10px] text-neutral-500 mb-0.5">撈網</span>
-              <span className="text-xl md:text-2xl font-bold tabular-nums">{netsRemaining}</span>
-            </div>
-          </div>
-
-          {/* F2d. 右側文字框：與左側對稱，預留直書文案 */}
-          <aside
-            className="hidden md:flex w-14 lg:w-16 shrink-0 bg-neutral-300 rounded-sm items-center justify-center"
-            aria-label="右側文字顯示區"
-          >
+          <aside className="game-couplet-aside hidden md:flex" aria-label="右側文字顯示區">
             <p
-              className="text-neutral-600 text-sm tracking-widest"
+              className="text-foreground/60 text-sm tracking-widest"
               style={{ writingMode: "vertical-rl" }}
             >
               這是春聯
@@ -665,8 +645,7 @@ export default function CatchFishGame() {
           </aside>
         </div>
 
-        {/* F3. 頁尾：桌面版體型／分數／耐久對照 + bestScore（跨局保留） */}
-        <footer className="hidden md:block mt-4 text-center text-xs text-neutral-500">
+        <footer className="hidden md:block mt-4 text-center game-message">
           小魚 1~3 分（耐久 -8% 起）· 中魚 4~7 分 · 大魚 8~10 分 · 最佳紀錄 {bestScore}
         </footer>
       </div>

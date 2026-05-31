@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import GameHudBar from "@/components/game/GameHudBar";
 
 const W = 960;
 const H = 640;
@@ -571,51 +572,51 @@ export default function BalloonShootGame() {
   };
 
   return (
-    <main className="min-h-full w-full bg-[#d8d4cf] flex flex-col items-center justify-center p-4">
-      <div className="relative w-full max-w-[960px] rounded-lg overflow-hidden shadow-lg bg-[#e8e4df]">
-        <header className="absolute top-0 left-0 right-0 z-10 flex items-end justify-end px-3 py-2 pointer-events-none">
-          <div className="pointer-events-auto rounded-full border border-zinc-300 bg-[#f5f0e8] px-5 py-2 shadow-inner">
-            <span className="text-2xl font-bold tracking-wide text-zinc-800 tabular-nums">
-              {score}
+    <main className="min-h-full w-full game-stage-shell flex flex-col items-center justify-center p-4">
+      <div className="relative w-full max-w-[960px]">
+        <div className="mb-2">
+          <GameHudBar
+            score={score}
+            resource={bullets}
+            resourceLabel="子彈"
+            resourceMax={INITIAL_BULLETS}
+          />
+        </div>
+
+        <div className="game-playfield-frame overflow-hidden">
+          <canvas
+            ref={canvasRef}
+            width={W}
+            height={H}
+            className={`relative z-0 block w-full h-auto touch-none ${aimMode ? "cursor-none" : "cursor-default"}`}
+            onPointerMove={onPointerMove}
+            onPointerDown={onPointerDown}
+          />
+
+          <div className="absolute bottom-3 left-4 right-4 flex flex-wrap items-center justify-end gap-2 pointer-events-none">
+            <span className={`game-overlay-panel px-3 py-1 text-xs ${aimMode ? "border-accent-red" : ""}`}>
+              {aimMode ? "瞄準模式（放開空白鍵退出）" : "按住空白鍵瞄準"}
             </span>
           </div>
-        </header>
-
-        <canvas
-          ref={canvasRef}
-          width={W}
-          height={H}
-          className={`relative z-0 block w-full h-auto touch-none ${aimMode ? "cursor-none" : "cursor-default"}`}
-          onPointerMove={onPointerMove}
-          onPointerDown={onPointerDown}
-        />
-
-        <div className="absolute bottom-3 left-4 right-4 flex flex-wrap items-center justify-between gap-2 text-sm text-zinc-700 pointer-events-none">
-          <span>
-            子彈：<strong className="text-zinc-900">{bullets}</strong> / {INITIAL_BULLETS}
-          </span>
-          <span className={aimMode ? "text-amber-800 font-medium" : ""}>
-            {aimMode ? "瞄準模式（放開空白鍵退出）" : "按住空白鍵瞄準"}
-          </span>
         </div>
       </div>
 
-      <p className="mt-3 max-w-[960px] text-center text-xs text-zinc-600 px-2">
+      <p className="mt-3 max-w-[960px] text-center game-message px-2">
         中央手槍 · 空白鍵開啟 1.2 倍瞄準鏡（直徑 200px）· 點擊即射。左/右 A 區 200 分、中 A 區 100 分；B 區 +10。
       </p>
 
       {toast ? (
-        <p className="mt-2 text-sm font-medium text-zinc-800 text-center min-h-[1.25rem]">{toast}</p>
+        <p className="mt-2 text-sm font-medium text-foreground/80 text-center min-h-[1.25rem]">
+          {toast}
+        </p>
       ) : null}
 
       {gameOver ? (
         <div className="mt-4 flex flex-col items-center gap-3">
-          <p className="text-lg font-bold text-zinc-900">最終得分：{score}</p>
-          <button
-            type="button"
-            onClick={resetGame}
-            className="rounded-xl bg-zinc-800 px-6 py-2 text-white hover:bg-zinc-700"
-          >
+          <p className="text-lg font-bold text-foreground tracking-widest">
+            最終得分：{score}
+          </p>
+          <button type="button" onClick={resetGame} className="game-btn-primary">
             再玩一次
           </button>
         </div>

@@ -57,10 +57,11 @@ export default function StallIntroModal({ script, onClose }: Props) {
 
   if (phase === "howto") {
     return (
-      <div className="fixed inset-0 z-[60] bg-black/90 flex items-center justify-center p-4">
-        <div className="game-panel max-w-lg w-full p-6 space-y-4">
-          <h2 className="game-title text-center">{script.title} — 玩法說明</h2>
-          <p className="text-sm text-zinc-300 leading-relaxed">{script.howToPlay}</p>
+      <div className="fixed inset-0 z-[60] hub-shell flex items-center justify-center p-4">
+        <div className="absolute inset-0 hub-world-sky opacity-95" />
+        <div className="game-panel relative max-w-lg w-full p-6 space-y-4">
+          <h2 className="game-title text-center text-ink">{script.title} — 玩法說明</h2>
+          <p className="game-dialog-text">{script.howToPlay}</p>
           <div className="flex gap-3 justify-center">
             <button type="button" className="game-btn-ghost" onClick={onClose}>
               返回夜市
@@ -84,10 +85,12 @@ export default function StallIntroModal({ script, onClose }: Props) {
         phase === "fade" ? "opacity-0 pointer-events-none" : "opacity-100"
       }`}
     >
-      <div className="absolute inset-0 bg-black/70" aria-hidden />
+      <div className="absolute inset-0 hub-world-sky opacity-80" aria-hidden />
       <div className="relative z-10 space-y-3 max-w-2xl mx-auto w-full">
         {script.glow && (
-          <p className="text-center text-amber-300 text-xs animate-pulse">◆ 攤位發光中 ◆</p>
+          <p className="text-center game-status-chip text-accent-red animate-pulse">
+            ◆ 攤位發光中 ◆
+          </p>
         )}
         {current?.kind === "caption" && (
           <SceneCaption

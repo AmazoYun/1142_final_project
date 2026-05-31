@@ -43,8 +43,10 @@ export default function SceneCaption({ id, text, onDismiss }: Props) {
           </button>
         )}
       </div>
-      <p className="text-sm md:text-base italic leading-relaxed">{display}</p>
-      {onDismiss && <p className="text-[10px] mt-2 opacity-50">點擊或按空白鍵繼續</p>}
+      <p className="game-dialog-text leading-relaxed">{display}</p>
+      {onDismiss && (
+        <p className="game-dialog-hint mt-2">點擊或按空白鍵繼續</p>
+      )}
     </div>
   );
 }

@@ -1,9 +1,7 @@
 "use client";
 
-import { Ma_Shan_Zheng } from "next/font/google";
 import { useCallback, useEffect, useRef, useState } from "react";
-
-const coupletFont = Ma_Shan_Zheng({ weight: "400", subsets: ["latin"] });
+import GameHudBar from "@/components/game/GameHudBar";
 //畫面各種size//
 const W = 720;
 const H = 640;
@@ -468,77 +466,70 @@ export default function RingTossGame() {
         : "";
 
   return (
-    <div className="flex min-h-full w-full bg-white">
-      <aside className="flex w-14 shrink-0 items-center justify-center bg-[#e8e8e8] sm:w-16 md:w-20 lg:w-24">
-        <p
-          className={`${coupletFont.className} text-lg tracking-widest text-neutral-600 sm:text-xl`}
-          style={{ writingMode: "vertical-rl" }}
-        >
-          這是春聯
-        </p>
-      </aside>
+    <div className="flex min-h-full w-full flex-col game-stage-shell">
+      <div className="shrink-0 px-3 py-2 sm:px-5">
+        <GameHudBar score={score} resource={ringsLeft} resourceLabel="套圈" />
+      </div>
 
-      <main className="flex min-h-full min-w-0 flex-1 flex-col">
-        <header className="flex shrink-0 items-center justify-end px-3 py-3 sm:px-5">
-          <div className="flex items-center gap-2 text-neutral-800">
-            <span
-              aria-hidden
-              className="inline-block h-5 w-5 rounded-full border-2 border-neutral-700"
-            />
-            <span className="text-lg font-medium tabular-nums">{ringsLeft}</span>
-          </div>
-        </header>
-
-        <div className="flex flex-1 flex-col items-center justify-center gap-2 px-2 pb-4">
-          <p className="max-w-md text-center text-xs text-neutral-500 sm:text-sm">
-            {message}
-            {` · 分數：${score}`}
+      <div className="flex min-h-0 flex-1 w-full">
+        <aside className="game-couplet-aside">
+          <p
+            className="text-lg tracking-widest text-foreground/60 sm:text-xl"
+            style={{ writingMode: "vertical-rl" }}
+          >
+            這是春聯
           </p>
-          {phaseHint ? (
-            <p className="text-center text-xs text-neutral-400">{phaseHint}</p>
-          ) : null}
+        </aside>
 
-          <canvas
-            ref={canvasRef}
-            width={W}
-            height={H}
-            className="max-h-[min(72vh,640px)] max-w-full cursor-pointer"
-            style={{ touchAction: "none" }}
-            onPointerDown={() => confirmAim()}
-          />
+        <main className="flex min-h-full min-w-0 flex-1 flex-col">
+          <div className="flex flex-1 flex-col items-center justify-center gap-2 px-2 pb-4">
+            <p className="max-w-md text-center game-message px-2">
+              {message}
+            </p>
+            {phaseHint ? (
+              <p className="text-center game-message text-xs">{phaseHint}</p>
+            ) : null}
 
-          <div className="flex flex-wrap justify-center gap-2 pt-1">
-            <button
-              type="button"
-              onClick={confirmAim}
-              disabled={gameOver || ringsLeft <= 0 || aimUi.phase === "flying"}
-              className="rounded border border-neutral-400 bg-neutral-100 px-4 py-1.5 text-sm text-neutral-800 disabled:opacity-40"
-            >
-              {aimUi.phase === "x"
-                ? "鎖定 X"
-                : aimUi.phase === "y"
-                  ? "鎖定 Y 並投出"
-                  : "..."}
-            </button>
-            <button
-              type="button"
-              onClick={restart}
-              className="rounded border border-neutral-300 px-4 py-1.5 text-sm text-neutral-600"
-            >
-              再玩一次
-            </button>
+            <div className="game-playfield-frame">
+              <canvas
+                ref={canvasRef}
+                width={W}
+                height={H}
+                className="max-h-[min(72vh,640px)] max-w-full cursor-pointer"
+                style={{ touchAction: "none" }}
+                onPointerDown={() => confirmAim()}
+              />
+            </div>
+
+            <div className="flex flex-wrap justify-center gap-2 pt-1">
+              <button
+                type="button"
+                onClick={confirmAim}
+                disabled={gameOver || ringsLeft <= 0 || aimUi.phase === "flying"}
+                className="game-action-btn disabled:opacity-40"
+              >
+                {aimUi.phase === "x"
+                  ? "鎖定 X"
+                  : aimUi.phase === "y"
+                    ? "鎖定 Y 並投出"
+                    : "..."}
+              </button>
+              <button type="button" onClick={restart} className="game-action-btn">
+                再玩一次
+              </button>
+            </div>
           </div>
-        </div>
-      </main>
+        </main>
 
-      <aside className="flex w-14 shrink-0 items-center justify-center bg-[#e8e8e8] sm:w-16 md:w-20 lg:w-24">
-        <p
-          className={`${coupletFont.className} text-lg tracking-widest text-neutral-600 sm:text-xl`}
-          style={{ writingMode: "vertical-rl" }}
-        >
-          這是春聯
-        </p>
-      </aside>
+        <aside className="game-couplet-aside">
+          <p
+            className="text-lg tracking-widest text-foreground/60 sm:text-xl"
+            style={{ writingMode: "vertical-rl" }}
+          >
+            這是春聯
+          </p>
+        </aside>
+      </div>
     </div>
   );
 }

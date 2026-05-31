@@ -3,11 +3,11 @@
 import type { Speaker } from "@/lib/narrative/types";
 import { useNarrativeStore } from "@/store/narrativeStore";
 
-const SPEAKER_STYLE: Record<Speaker, string> = {
-  主角: "border-amber-400/60 text-amber-100",
-  友人A: "border-sky-400/60 text-sky-100",
-  友人B: "border-emerald-400/60 text-emerald-100",
-  旁白: "border-zinc-400/60 text-zinc-200",
+const SPEAKER_BORDER: Record<Speaker, string> = {
+  主角: "border-l-accent-red",
+  友人A: "border-l-sky-400",
+  友人B: "border-l-emerald-400",
+  旁白: "border-l-foreground/40",
 };
 
 type Props = {
@@ -18,7 +18,13 @@ type Props = {
   showNext?: boolean;
 };
 
-export default function DialoguePanel({ id, speaker, text, onAdvance, showNext = true }: Props) {
+export default function DialoguePanel({
+  id,
+  speaker,
+  text,
+  onAdvance,
+  showNext = true,
+}: Props) {
   const editMode = useNarrativeStore((s) => s.editMode);
   const getText = useNarrativeStore((s) => s.getText);
   const setOverride = useNarrativeStore((s) => s.setOverride);
@@ -26,7 +32,7 @@ export default function DialoguePanel({ id, speaker, text, onAdvance, showNext =
 
   return (
     <div
-      className={`game-panel mx-auto max-w-2xl border-l-4 px-4 py-3 ${SPEAKER_STYLE[speaker]}`}
+      className={`game-panel mx-auto max-w-2xl border-l-4 px-4 py-3 ${SPEAKER_BORDER[speaker]}`}
       onClick={onAdvance}
       role={onAdvance ? "button" : undefined}
       tabIndex={onAdvance ? 0 : undefined}
@@ -38,7 +44,7 @@ export default function DialoguePanel({ id, speaker, text, onAdvance, showNext =
       }}
     >
       <div className="flex items-start justify-between gap-2">
-        <p className="text-xs font-bold opacity-80 mb-1">{speaker}</p>
+        <p className="game-dialog-speaker mb-1">{speaker}</p>
         {editMode && (
           <button
             type="button"
@@ -53,9 +59,9 @@ export default function DialoguePanel({ id, speaker, text, onAdvance, showNext =
           </button>
         )}
       </div>
-      <p className="text-sm md:text-base leading-relaxed whitespace-pre-wrap">{display}</p>
+      <p className="game-dialog-text whitespace-pre-wrap">{display}</p>
       {showNext && onAdvance && (
-        <p className="text-[10px] text-right mt-2 opacity-50">點擊或按空白鍵繼續 ▼</p>
+        <p className="game-dialog-hint text-right mt-2">點擊或按空白鍵繼續 ▼</p>
       )}
     </div>
   );

@@ -15,11 +15,13 @@ const STALL_COUNT = 10;
 const STALL_W = 200;
 const WORLD_W = STALL_COUNT * STALL_W;
 const PLAYER_SPEED = 4;
+const SPAWN_STALL_INDEX = 1;
+const INITIAL_PLAYER_X = SPAWN_STALL_INDEX * STALL_W + STALL_W / 2;
 const INTERACTIVE: { index: number; id: StallId; label: string }[] = [
   { index: 1, id: "pinball", label: "彈珠台" },
-  { index: 3, id: "balloonshoot", label: "射飛鏢" },
-  { index: 5, id: "ringtoss", label: "套圈圈" },
-  { index: 7, id: "catchfish", label: "撈金魚" },
+  { index: 2, id: "ringtoss", label: "套圈圈" },
+  { index: 3, id: "balloonshoot", label: "射氣球" },
+  { index: 4, id: "catchfish", label: "撈金魚" },
 ];
 
 export default function NightMarketHub() {
@@ -34,7 +36,7 @@ export default function NightMarketHub() {
   const setEditMode = useNarrativeStore((s) => s.setEditMode);
   const getText = useNarrativeStore((s) => s.getText);
 
-  const [playerX, setPlayerX] = useState(WORLD_W / 2);
+  const [playerX, setPlayerX] = useState(INITIAL_PLAYER_X);
   const [opening, setOpening] = useState(false);
   const [openingIndex, setOpeningIndex] = useState(0);
   const [moveHintVisible, setMoveHintVisible] = useState(true);
@@ -151,8 +153,8 @@ export default function NightMarketHub() {
 
   if (opening && openingLine) {
     return (
-      <div className="fixed inset-0 z-50 overflow-hidden">
-        <div className="absolute inset-0 bg-zinc-950" />
+      <div className="fixed inset-0 z-50 overflow-hidden hub-shell">
+        <div className="absolute inset-0 hub-world-sky" />
         <button
           type="button"
           className="absolute top-4 right-4 z-30 game-btn-ghost"
@@ -187,15 +189,11 @@ export default function NightMarketHub() {
   const viewOffset = playerX - 480;
 
   return (
-    <div className="h-screen flex flex-col bg-zinc-950 overflow-hidden">
+    <div className="hub-shell h-screen flex flex-col overflow-hidden">
       <header className="game-header shrink-0 flex items-center justify-between px-4 py-2">
-        <span className="game-title text-lg">無人夜市</span>
+        <span className="game-title text-sm sm:text-lg">無人夜市</span>
         <div className="flex gap-2 items-center">
-          {editMode && (
-            <span className="text-[10px] text-amber-400 border border-amber-500/50 px-2 py-0.5 rounded">
-              編輯模式
-            </span>
-          )}
+          {editMode && <span className="hub-edit-badge">編輯模式</span>}
           <button
             type="button"
             className="game-btn-ghost text-xs"
@@ -217,8 +215,8 @@ export default function NightMarketHub() {
             transform: `translateX(calc(-50% - ${viewOffset}px))`,
           }}
         >
-          <div className="absolute inset-0 bg-gradient-to-b from-zinc-800 via-zinc-900 to-zinc-950" />
-          <div className="absolute bottom-0 left-0 right-0 h-24 bg-zinc-800/80 border-t border-amber-900/30" />
+          <div className="absolute inset-0 hub-world-sky" />
+          <div className="absolute bottom-0 left-0 right-0 h-24 hub-world-ground" />
 
           {Array.from({ length: STALL_COUNT }).map((_, i) => {
             const interactive = INTERACTIVE.find((s) => s.index === i);
@@ -231,18 +229,18 @@ export default function NightMarketHub() {
                 style={{ left: x, width: STALL_W }}
               >
                 <div
-                  className={`mx-4 h-36 rounded-t-lg border-2 flex flex-col items-center justify-end pb-2 transition-shadow ${
+                  className={`hub-stall ${
                     interactive
                       ? near
-                        ? "border-amber-400 shadow-[0_0_24px_rgba(251,191,36,0.5)] bg-amber-950/40"
-                        : "border-amber-700/50 bg-zinc-800/60"
-                      : "border-zinc-700 bg-zinc-800/30 opacity-60"
+                        ? "hub-stall--interactive hub-stall--near"
+                        : "hub-stall--interactive"
+                      : "hub-stall--inactive"
                   }`}
                 >
-                  <span className="text-[10px] text-zinc-500 mb-8">
+                  <span className="hub-stall__tag">
                     {interactive ? "可互動" : "攤位"}
                   </span>
-                  <p className="text-sm font-bold text-amber-100">
+                  <p className="hub-stall__name">
                     {interactive?.label ?? `攤位 ${i + 1}`}
                   </p>
                 </div>
@@ -250,10 +248,7 @@ export default function NightMarketHub() {
             );
           })}
 
-          <div
-            className="absolute bottom-8 w-8 h-12 -ml-4 rounded-t-full bg-zinc-600 border-2 border-zinc-400"
-            style={{ left: playerX }}
-          />
+          <div className="hub-player" style={{ left: playerX }} />
         </div>
 
         {moveHintVisible && !movementLocked && (
@@ -314,9 +309,7 @@ export default function NightMarketHub() {
         hasVisitedStall(nearStallId) &&
         !activeStall &&
         !opening &&
-        !boundaryMsg && (
-          <StallRevisitBar stallId={nearStallId} />
-        )}
+        !boundaryMsg && <StallRevisitBar stallId={nearStallId} />}
     </div>
   );
 }

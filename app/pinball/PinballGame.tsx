@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type MouseEvent, type WheelEvent } from "react";
+import GameHudBar from "@/components/game/GameHudBar";
 
 type Vec = { x: number; y: number };
 type Ball = { pos: Vec; vel: Vec; radius: number; launched: boolean };
@@ -1337,31 +1338,22 @@ export default function PinballGame() {
   };
 
   return (
-    <main className="min-h-full w-full overflow-auto bg-neutral-100 text-neutral-900">
+    <main className="min-h-full w-full overflow-auto game-stage-shell">
       <div className="mx-auto flex min-h-full max-w-5xl flex-col gap-3 p-4">
-        <div className="flex flex-wrap items-center justify-center gap-2 text-sm">
-          <span className="rounded border border-neutral-300 bg-white px-3 py-1.5">彈珠台</span>
-          <span
-            className={`rounded border border-neutral-300 bg-white px-3 py-1.5 tabular-nums transition-colors ${
-              scoreFlash === "up"
-                ? "bg-amber-100 border-amber-400"
-                : scoreFlash === "down"
-                  ? "bg-red-100 border-red-400"
-                  : ""
-            }`}
-          >
-            分數：{displayScore}
-          </span>
-          <span className="rounded border border-neutral-300 bg-white px-3 py-1.5">
-            連擊：x{combo}
-          </span>
+        <GameHudBar
+          score={displayScore}
+          resource={balls}
+          resourceLabel="彈珠"
+          scoreFlash={scoreFlash}
+        />
+
+        <div className="flex flex-wrap items-center justify-center gap-2 text-xs game-message">
+          <span className="game-status-chip">連擊：x{combo}</span>
           <button
             type="button"
             onClick={() => setEditMode((v) => !v)}
-            className={`rounded border px-3 py-1.5 text-xs ${
-              editMode
-                ? "border-amber-500 bg-amber-50"
-                : "border-neutral-300 bg-white hover:bg-neutral-50"
+            className={`game-action-btn text-xs ${
+              editMode ? "border-amber-500" : ""
             }`}
           >
             {editMode ? "編輯中" : "編輯模式"}
@@ -1370,33 +1362,33 @@ export default function PinballGame() {
             type="button"
             onClick={saveLayout}
             disabled={savingLayout}
-            className="rounded border border-neutral-300 bg-white px-3 py-1.5 text-xs hover:bg-neutral-50 disabled:opacity-50"
+            className="game-action-btn text-xs disabled:opacity-50"
           >
             {savingLayout ? "儲存中" : "儲存布局"}
           </button>
-          <span className="w-full text-center text-xs text-neutral-500 sm:w-auto">{status}</span>
+          <span className="w-full text-center sm:w-auto">{status}</span>
         </div>
         {editMode && selectedObstacle.startsWith("tri:") ? (
           <div className="grid grid-cols-6 gap-2 text-xs">
             <button
               type="button"
               onClick={() => rotateTriangleByKey(selectedObstacle, -8)}
-              className="rounded border border-neutral-300 bg-white px-2 py-2 text-xs hover:bg-neutral-50"
+              className="game-action-btn text-xs"
             >
               三角形左轉
             </button>
             <button
               type="button"
               onClick={() => rotateTriangleByKey(selectedObstacle, 8)}
-              className="rounded border border-neutral-300 bg-white px-2 py-2 text-xs hover:bg-neutral-50"
+              className="game-action-btn text-xs"
             >
               三角形右轉
             </button>
-            <div className="col-span-2 flex items-center gap-2 rounded border border-neutral-300 bg-white px-2 py-2">
+            <div className="col-span-2 flex items-center gap-2 game-overlay-panel px-2 py-2">
               <input
                 value={triangleRotateInput}
                 onChange={(e) => setTriangleRotateInput(e.target.value)}
-                className="w-14 rounded border border-neutral-300 bg-neutral-50 px-2 py-1 text-center text-xs"
+                className="w-14 border border-ink/30 bg-white/40 px-2 py-1 text-center text-xs text-ink"
                 inputMode="numeric"
               />
               <button
@@ -1406,7 +1398,7 @@ export default function PinballGame() {
                   if (!Number.isFinite(deg)) return;
                   rotateTriangleByKey(selectedObstacle, deg);
                 }}
-                className="rounded bg-amber-400 px-2 py-1 text-xs text-zinc-900"
+                className="game-action-btn text-xs"
               >
                 角度套用
               </button>
@@ -1414,28 +1406,28 @@ export default function PinballGame() {
             <button
               type="button"
               onClick={() => stretchTriangleByKey(selectedObstacle, 1.12, 1)}
-              className="rounded border border-neutral-300 bg-white px-2 py-2 text-xs hover:bg-neutral-50"
+              className="game-action-btn text-xs"
             >
               橫向拉伸
             </button>
             <button
               type="button"
               onClick={() => stretchTriangleByKey(selectedObstacle, 0.9, 1)}
-              className="rounded border border-neutral-300 bg-white px-2 py-2 text-xs hover:bg-neutral-50"
+              className="game-action-btn text-xs"
             >
               橫向縮回
             </button>
             <button
               type="button"
               onClick={() => stretchTriangleByKey(selectedObstacle, 1, 1.12)}
-              className="rounded border border-neutral-300 bg-white px-2 py-2 text-xs hover:bg-neutral-50"
+              className="game-action-btn text-xs"
             >
               縱向拉伸
             </button>
             <button
               type="button"
               onClick={() => stretchTriangleByKey(selectedObstacle, 1, 0.9)}
-              className="rounded border border-neutral-300 bg-white px-2 py-2 text-xs hover:bg-neutral-50"
+              className="game-action-btn text-xs"
             >
               縱向縮回
             </button>
@@ -1443,26 +1435,23 @@ export default function PinballGame() {
         ) : null}
 
         <div className="flex min-h-0 flex-1 items-center justify-center gap-5">
-          <section className="relative rounded-lg border-2 border-neutral-400 bg-neutral-200 p-3">
+          <section className="game-playfield-frame">
             <canvas
               ref={canvasRef}
               width={BOARD_WIDTH}
               height={BOARD_HEIGHT}
-              className="rounded-lg border border-neutral-500"
+              className="border border-ink/40"
               onMouseDown={onCanvasMouseDown}
               onMouseMove={onCanvasMouseMove}
               onMouseUp={onCanvasMouseUp}
               onMouseLeave={onCanvasMouseUp}
               onWheel={onCanvasWheel}
             />
-            <div className="pointer-events-none absolute left-1/2 -top-5 -translate-x-1/2 rounded-full border border-neutral-300 bg-white px-5 py-2 text-3xl font-semibold text-neutral-900 shadow-sm">
-              {balls}
-            </div>
           </section>
 
-          <aside className="w-20 rounded-md border border-neutral-300 bg-white p-2">
-            <div className="mb-2 text-center text-xs text-neutral-600">力度(3s)</div>
-            <div className="mb-2 rounded border border-neutral-200 bg-neutral-50 py-1 text-center text-[10px] text-neutral-700">
+          <aside className="game-charge-panel">
+            <div className="game-charge-panel__label mb-2">力度(3s)</div>
+            <div className="game-charge-tier">
               {chargeTier === "low"
                 ? "低段"
                 : chargeTier === "mid"
@@ -1488,7 +1477,7 @@ export default function PinballGame() {
                 );
               })}
             </div>
-            <div className="mt-2 text-center text-[10px] text-neutral-500">低(易滑回) / 中 / 高(滿蓄力x1.2)</div>
+            <div className="game-charge-panel__hint mt-2">低(易滑回) / 中 / 高(滿蓄力x1.2)</div>
           </aside>
         </div>
 
@@ -1498,31 +1487,29 @@ export default function PinballGame() {
               rewardVisible ? "opacity-100" : "opacity-0"
             }`}
           >
-            <div className="whitespace-pre-line rounded-xl border border-amber-200/70 bg-black/75 px-8 py-4 text-center text-3xl font-semibold text-amber-200 shadow-[0_0_24px_rgba(255,220,120,0.55)]">
-              {rewardText}
-            </div>
+            <div className="game-reward-overlay">{rewardText}</div>
           </div>
         ) : null}
 
-        <div className="grid grid-cols-6 gap-2 text-center text-xs">
-          <div className="flex items-center justify-center rounded border border-neutral-300 bg-white p-2">
+        <div className="game-legend-grid">
+          <div className="game-legend-cell">
             <span className="inline-block h-3 w-3 rounded-full border border-amber-200 bg-red-600" />
             <span className="mx-1 inline-block h-3 w-3 rounded-full border border-amber-200 bg-red-600" />
           </div>
-          <div className="flex items-center justify-center rounded border border-neutral-300 bg-white p-2">
+          <div className="game-legend-cell">
             <span className="inline-block h-3 w-6 rounded-sm border border-amber-200 bg-red-700" />
           </div>
-          <div className="flex items-center justify-center rounded border border-neutral-300 bg-white p-2">
+          <div className="game-legend-cell">
             <span className="inline-block h-0 w-0 border-x-[8px] border-b-[12px] border-x-transparent border-b-amber-300" />
           </div>
-          <div className="flex items-center justify-center rounded border border-neutral-300 bg-white p-2">
+          <div className="game-legend-cell">
             <span className="inline-block h-4 w-4 rotate-45 border border-amber-200 bg-red-800" />
           </div>
-          <div className="flex items-center justify-center rounded border border-neutral-300 bg-white p-2">
+          <div className="game-legend-cell">
             <span className="inline-block h-3 w-3 rounded-full border border-amber-200 bg-zinc-600" />
             <span className="mx-1 inline-block h-[1px] w-4 bg-amber-300/90" />
           </div>
-          <div className="flex items-center justify-center rounded border border-neutral-300 bg-white p-2">
+          <div className="game-legend-cell">
             <span className="inline-block h-[2px] w-5 bg-amber-300/95" />
             <span className="ml-1 inline-block h-5 w-[2px] bg-amber-300/95" />
           </div>
