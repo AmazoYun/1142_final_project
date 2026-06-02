@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { DotGothic16 } from "next/font/google";
 import "./globals.css";
+// [收集系統] 全域取得物品對話層；任意頁呼叫 acquireCollectible 時顯示
+import CollectibleProviders from "@/components/collectibles/CollectibleProviders";
 
 const dotGothic = DotGothic16({
   weight: "400",
@@ -22,6 +24,7 @@ export default function RootLayout({
     <html lang="zh-Hant" className={`${dotGothic.variable} h-full`}>
       <body className="scanlines noise-overlay min-h-full flex flex-col antialiased">
         {children}
+        <CollectibleProviders />
       </body>
     </html>
   );

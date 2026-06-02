@@ -548,3 +548,52 @@ body {
   box-shadow: 2px 2px 0 0 var(--ink);
 }
 
+/* =============================================================================
+   [收集系統] 背包線框 UI（7-背包.png）— 僅黑白線條 + 選中黃光
+   ============================================================================= */
+.backpack-page {
+  font-family: var(--font-dot-gothic), monospace;
+}
+
+.backpack-wire-btn {
+  border: 2px solid #111;
+  background: #fff;
+  color: #111;
+  font-weight: 700;
+}
+
+.backpack-back {
+  color: #111;
+  text-decoration: none;
+}
+
+.backpack-back:hover {
+  text-decoration: underline;
+}
+
+.backpack-slot {
+  border: 2px solid #111;
+  background: #fff;
+  cursor: pointer;
+}
+
+.backpack-slot--empty {
+  background: #fff;
+  cursor: default;
+}
+
+.backpack-slot--locked {
+  cursor: not-allowed;
+  background: #fafafa;
+}
+
+.backpack-slot--selected {
+  box-shadow:
+    0 0 0 4px #f5d000,
+    inset 0 0 0 2px #111;
+}
+
+.backpack-debug {
+  border-top: 2px solid #111;
+}
+

@@ -201,6 +201,10 @@ export default function NightMarketHub() {
           >
             {editMode ? "關閉編輯" : "編輯模式"}
           </button>
+          {/* [收集系統] 跳轉至背包頁 /backpack */}
+          <Link href="/backpack" className="game-btn-ghost text-xs">
+            背包
+          </Link>
           <Link href="/?replayIntro=1" className="game-btn-ghost text-xs">
             重播開場
           </Link>
