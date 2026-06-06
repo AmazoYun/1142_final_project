@@ -3,6 +3,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import GameHudBar from "@/components/game/GameHudBar";
 import { awardStallReward } from "@/lib/collectibles/awardStallReward";
+import {
+  BALLOON_COLORS,
+  loadBalloonAssets,
+  type BalloonAssets,
+  type BalloonColor,
+} from "@/lib/balloonshoot/assets";
 
 const W = 960;
 const H = 640;
@@ -21,15 +27,26 @@ const SCOPE_DIAMETER = SCOPE_R * 2;
 const ZOOM = 1.2;
 const CROSSHAIR_R = 5;
 
+type Zone = "left" | "center" | "right";
+
 const COL_W = W / 3;
-const A_RING_CY = 118;
+const BALLOON_SHIFT_Y = 40;
+const ZONE_OFFSET_X: Record<Zone, number> = { left: 25, center: 0, right: -25 };
+/** A 區旋轉氣球：左右再往內 10px */
+const A_ZONE_EXTRA_X: Record<Zone, number> = { left: 10, center: 0, right: -10 };
+/** A 區旋轉氣球：左右 +50px、中央 +35px（相對 A_RING_CY） */
+const A_ZONE_EXTRA_Y: Record<Zone, number> = { left: 50, center: 35, right: 50 };
+/** 左區 B 區氣球再往右 10px */
+const B_ZONE_EXTRA_X: Record<Zone, number> = { left: 10, center: 0, right: 0 };
+/** B 區最下排：左 +5px、右 -5px */
+const B_ZONE_BOTTOM_ROW_EXTRA_X: Record<Zone, number> = { left: 5, center: 0, right: -5 };
+const BALLOON_SIZE_SCALE = 1.44;
+const A_RING_CY = 118 + BALLOON_SHIFT_Y;
 const A_RING_R_CENTER = 68;
 const A_RING_R_SIDE = 54;
-const B_ZONE_TOP = 368;
+const B_ZONE_TOP = 368 + BALLOON_SHIFT_Y;
 const B_CELL_H = 54;
 const B_COL_OFFSETS = [-92, -38, 38, 92];
-
-type Zone = "left" | "center" | "right";
 
 type Balloon = {
   id: string;
@@ -38,7 +55,7 @@ type Balloon = {
   ringIndex?: number;
   bRow?: number;
   bCol?: number;
-  color: string;
+  color: BalloonColor;
   r: number;
   alive: boolean;
   popStart?: number;
@@ -72,14 +89,27 @@ const BALLOON_R: Record<Zone, number> = {
   right: 16,
 };
 
-const B_COLORS = ["#ef4444", "#facc15", "#3b82f6", "#a855f7", "#22c55e", "#f97316", "#ec4899", "#14b8a6"];
-
 function clamp(v: number, min: number, max: number) {
   return Math.max(min, Math.min(max, v));
 }
 
 function zoneRingRadius(zone: Zone) {
   return zone === "center" ? A_RING_R_CENTER : A_RING_R_SIDE;
+}
+
+function zoneCenterX(zone: Zone, area: "A" | "B" = "B") {
+  const base = ZONE_CENTER_X[zone] + ZONE_OFFSET_X[zone];
+  if (area === "A") return base + A_ZONE_EXTRA_X[zone];
+  return base;
+}
+
+function aRingCenterY(zone: Zone) {
+  return A_RING_CY + A_ZONE_EXTRA_Y[zone];
+}
+
+function bZoneBalloonX(zone: Zone, row: number, col: number) {
+  const bottomExtra = row === 1 ? B_ZONE_BOTTOM_ROW_EXTRA_X[zone] : 0;
+  return zoneCenterX(zone) + B_ZONE_EXTRA_X[zone] + bottomExtra + B_COL_OFFSETS[col]!;
 }
 
 function calcAScore(zone: Zone, popped: number, total: number) {
@@ -111,8 +141,8 @@ function createBalloons(): Balloon[] {
   const zones: Zone[] = ["left", "center", "right"];
 
   for (const zone of zones) {
-    const cx = ZONE_CENTER_X[zone];
-    const r = BALLOON_R[zone];
+    const cx = zoneCenterX(zone, "A");
+    const r = BALLOON_R[zone] * BALLOON_SIZE_SCALE;
 
     for (let i = 0; i < 6; i++) {
       list.push({
@@ -120,11 +150,11 @@ function createBalloons(): Balloon[] {
         zone,
         area: "A",
         ringIndex: i,
-        color: B_COLORS[i % B_COLORS.length]!,
+        color: BALLOON_COLORS[i % BALLOON_COLORS.length]!,
         r,
         alive: true,
         x: cx,
-        y: A_RING_CY,
+        y: aRingCenterY(zone),
       });
     }
 
@@ -137,10 +167,10 @@ function createBalloons(): Balloon[] {
           area: "B",
           bRow: row,
           bCol: col,
-          color: B_COLORS[(idx + zones.indexOf(zone)) % B_COLORS.length]!,
+          color: BALLOON_COLORS[(idx + zones.indexOf(zone)) % BALLOON_COLORS.length]!,
           r,
           alive: true,
-          x: cx + B_COL_OFFSETS[col]!,
+          x: bZoneBalloonX(zone, row, col),
           y: B_ZONE_TOP + row * B_CELL_H,
         });
       }
@@ -152,48 +182,73 @@ function createBalloons(): Balloon[] {
 
 function updateRotatingPositions(balloons: Balloon[], angles: Record<Zone, number>) {
   for (const b of balloons) {
-    if (b.area !== "A" || !b.alive || b.ringIndex === undefined) continue;
-    const cx = ZONE_CENTER_X[b.zone];
+    if (b.area !== "A" || b.ringIndex === undefined) continue;
+    const cx = zoneCenterX(b.zone, "A");
     const ringR = zoneRingRadius(b.zone);
     const angle = angles[b.zone] + (b.ringIndex / 6) * Math.PI * 2;
     b.x = cx + Math.cos(angle) * ringR;
-    b.y = A_RING_CY + Math.sin(angle) * ringR;
+    b.y = aRingCenterY(b.zone) + Math.sin(angle) * ringR;
   }
 }
 
-function drawBalloon(ctx: CanvasRenderingContext2D, b: Balloon, now: number) {
-  if (!b.alive && b.popStart) {
-    const t = (now - b.popStart) / 300;
-    if (t >= 1) return;
-    ctx.save();
-    ctx.globalAlpha = 1 - t;
-    ctx.translate(b.x, b.y);
-    ctx.scale(1 + t * 0.5, 1 + t * 0.5);
-    ctx.beginPath();
-    ctx.ellipse(0, 0, b.r * 0.72, b.r, 0, 0, Math.PI * 2);
-    ctx.fillStyle = b.color;
-    ctx.fill();
-    ctx.restore();
+function drawCoverBackground(
+  ctx: CanvasRenderingContext2D,
+  img: HTMLImageElement,
+  width: number,
+  height: number,
+) {
+  const iw = img.naturalWidth;
+  const ih = img.naturalHeight;
+  const scale = Math.max(width / iw, height / ih);
+  const dw = iw * scale;
+  const dh = ih * scale;
+  ctx.drawImage(img, (width - dw) / 2, (height - dh) / 2, dw, dh);
+}
+
+function drawBalloonShadow(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  drawTop: number,
+  w: number,
+  h: number,
+  broken = false,
+) {
+  const shadowY = drawTop + h * (broken ? 0.78 : 0.88);
+  const rx = w * (broken ? 0.42 : 0.36);
+  const ry = Math.max(3, h * (broken ? 0.09 : 0.075));
+  ctx.save();
+  ctx.fillStyle = broken ? "rgba(0,0,0,0.2)" : "rgba(0,0,0,0.26)";
+  ctx.beginPath();
+  ctx.ellipse(x, shadowY, rx, ry, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawBalloonSprite(
+  ctx: CanvasRenderingContext2D,
+  assets: BalloonAssets,
+  b: Balloon,
+) {
+  if (!b.alive) {
+    const img = assets.broken[b.color];
+    const targetH = b.r * 2.4;
+    const scale = targetH / img.naturalHeight;
+    const w = img.naturalWidth * scale;
+    const h = img.naturalHeight * scale;
+    const drawY = b.y - h * 0.55;
+    drawBalloonShadow(ctx, b.x, drawY, w, h, true);
+    ctx.drawImage(img, b.x - w / 2, drawY, w, h);
     return;
   }
-  if (!b.alive) return;
 
-  ctx.save();
-  ctx.translate(b.x, b.y);
-  ctx.beginPath();
-  ctx.ellipse(0, 0, b.r * 0.72, b.r, 0, 0, Math.PI * 2);
-  ctx.fillStyle = b.color;
-  ctx.fill();
-  ctx.strokeStyle = "rgba(0,0,0,0.22)";
-  ctx.lineWidth = 1.5;
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.moveTo(0, b.r);
-  ctx.quadraticCurveTo(3, b.r + 12, 0, b.r + 18);
-  ctx.strokeStyle = "rgba(50,50,50,0.45)";
-  ctx.lineWidth = 1;
-  ctx.stroke();
-  ctx.restore();
+  const img = assets.full[b.color];
+  const targetH = b.r * 2.15;
+  const scale = targetH / img.naturalHeight;
+  const w = img.naturalWidth * scale;
+  const h = img.naturalHeight * scale;
+  const drawY = b.y - h * 0.52;
+  drawBalloonShadow(ctx, b.x, drawY, w, h);
+  ctx.drawImage(img, b.x - w / 2, drawY, w, h);
 }
 
 function drawGun(ctx: CanvasRenderingContext2D) {
@@ -222,52 +277,33 @@ function drawGun(ctx: CanvasRenderingContext2D) {
   ctx.restore();
 }
 
-function drawPanels(ctx: CanvasRenderingContext2D) {
-  const zones: Zone[] = ["left", "center", "right"];
-  for (let i = 0; i < 3; i++) {
-    const x = i * COL_W + 8;
-    const w = COL_W - 16;
-    ctx.fillStyle = i === 1 ? "rgba(255,255,255,0.35)" : "rgba(255,255,255,0.2)";
-    ctx.fillRect(x, PLAY_TOP, w, FRONT_ROW_Y - PLAY_TOP);
-    ctx.strokeStyle = "rgba(100,90,80,0.35)";
-    ctx.lineWidth = 1;
-    ctx.strokeRect(x, PLAY_TOP, w, FRONT_ROW_Y - PLAY_TOP);
-
-    const cx = ZONE_CENTER_X[zones[i]!];
-    ctx.strokeStyle = "rgba(120,110,100,0.4)";
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.arc(cx, A_RING_CY, zoneRingRadius(zones[i]!) + 8, 0, Math.PI * 2);
-    ctx.stroke();
-
-    ctx.fillStyle = "rgba(80,70,60,0.5)";
-    ctx.font = "11px sans-serif";
-    ctx.textAlign = "center";
-    ctx.fillText(i === 0 ? "左區" : i === 1 ? "中區" : "右區", cx, PLAY_TOP + 14);
-    ctx.fillText("A區", cx, A_RING_CY - zoneRingRadius(zones[i]!) - 18);
-    ctx.fillText("B區", cx, B_ZONE_TOP - 12);
-  }
-}
-
 function renderGameScene(
   ctx: CanvasRenderingContext2D,
+  assets: BalloonAssets | null,
   balloons: Balloon[],
   now: number,
   drawGunSprite: boolean,
 ) {
-  const grad = ctx.createLinearGradient(0, 0, 0, H);
-  grad.addColorStop(0, "#e8e4df");
-  grad.addColorStop(1, "#d4cfc8");
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, W, H);
-
-  drawPanels(ctx);
-
-  for (const b of balloons) {
-    if (b.area === "B") drawBalloon(ctx, b, now);
+  if (assets?.background) {
+    drawCoverBackground(ctx, assets.background, W, H);
+  } else {
+    const grad = ctx.createLinearGradient(0, 0, 0, H);
+    grad.addColorStop(0, "#e8e4df");
+    grad.addColorStop(1, "#d4cfc8");
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
   }
-  for (const b of balloons) {
-    if (b.area === "A") drawBalloon(ctx, b, now);
+
+  if (assets) {
+    for (const b of balloons) {
+      if (b.area === "B" && b.alive) drawBalloonSprite(ctx, assets, b);
+    }
+    for (const b of balloons) {
+      if (b.area === "A" && b.alive) drawBalloonSprite(ctx, assets, b);
+    }
+    for (const b of balloons) {
+      if (!b.alive) drawBalloonSprite(ctx, assets, b);
+    }
   }
 
   if (drawGunSprite) drawGun(ctx);
@@ -355,6 +391,7 @@ function drawScopeView(
 export default function BalloonShootGame() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const bufferRef = useRef<HTMLCanvasElement | null>(null);
+  const assetsRef = useRef<BalloonAssets | null>(null);
   const balloonsRef = useRef<Balloon[]>(createBalloons());
   const aimWorldRef = useRef({ x: W / 2, y: H / 2 });
   const aimModeRef = useRef(false);
@@ -472,6 +509,13 @@ export default function BalloonShootGame() {
   );
 
   useEffect(() => {
+    loadBalloonAssets()
+      .then((assets) => {
+        assetsRef.current = assets;
+      })
+      .catch(() => {
+        setToast("素材載入失敗，使用備用顯示");
+      });
     setToast("按住空白鍵進入瞄準模式，瞄準後點擊射擊");
   }, []);
 
@@ -530,7 +574,7 @@ export default function BalloonShootGame() {
       }
 
       const balloons = balloonsRef.current;
-      renderGameScene(bctx, balloons, now, !aimModeRef.current);
+      renderGameScene(bctx, assetsRef.current, balloons, now, !aimModeRef.current);
 
       if (aimModeRef.current) {
         const aim = aimWorldRef.current;
@@ -581,16 +625,13 @@ export default function BalloonShootGame() {
   return (
     <main className="min-h-full w-full game-stage-shell flex flex-col items-center justify-center p-4">
       <div className="relative w-full max-w-[960px]">
-        <div className="mb-2">
+        <div className="game-playfield-frame overflow-hidden">
           <GameHudBar
             score={score}
             resource={bullets}
             resourceLabel="子彈"
             resourceMax={INITIAL_BULLETS}
           />
-        </div>
-
-        <div className="game-playfield-frame overflow-hidden">
           <canvas
             ref={canvasRef}
             width={W}
@@ -620,7 +661,7 @@ export default function BalloonShootGame() {
 
       {gameOver ? (
         <div className="mt-4 flex flex-col items-center gap-3">
-          <p className="text-lg font-bold text-foreground tracking-widest">
+          <p className="game-score-board-bg px-6 py-3 text-lg font-bold tracking-widest text-center">
             最終得分：{score}
           </p>
           <button type="button" onClick={resetGame} className="game-btn-primary">

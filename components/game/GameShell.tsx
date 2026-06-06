@@ -6,16 +6,17 @@ import { useEffect, type ReactNode } from "react";
 type Props = {
   title: string;
   children: ReactNode;
+  className?: string;
 };
 
 /** 四款小遊戲共用頂欄；遊戲本體自行排版，外殼不擠壓版面 */
-export default function GameShell({ title, children }: Props) {
+export default function GameShell({ title, children, className = "" }: Props) {
   useEffect(() => {
     document.title = `${title}｜無人夜市`;
   }, [title]);
 
   return (
-    <div className="game-stage-shell min-h-screen flex flex-col">
+    <div className={`game-stage-shell min-h-screen flex flex-col ${className}`.trim()}>
       <header className="game-header shrink-0 flex items-center justify-between px-4 py-2.5">
         <Link
           href="/market"

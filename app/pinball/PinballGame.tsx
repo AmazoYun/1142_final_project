@@ -3,86 +3,78 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent, type WheelEvent } from "react";
 import GameHudBar from "@/components/game/GameHudBar";
 import { awardStallReward } from "@/lib/collectibles/awardStallReward";
+import {
+  loadPinballAssets,
+  randomPinballColor,
+  type LoadedPinballAssets,
+  type PinballColorIndex,
+} from "@/lib/pinball/assets";
+import {
+  drawChargeMeter,
+  drawObstacleSprites,
+  drawPinballBackground,
+  drawPinballSprite,
+} from "@/lib/pinball/drawSprites";
+import { collideBallWithImageBody } from "@/lib/pinball/imageBody";
+import {
+  rotateObstacleByPointer,
+  rotateObstacleDegrees,
+  scaleObstacleByCorner,
+  scaleObstacleUniform,
+  translateObstacle,
+  updateObstacleByKey,
+} from "@/lib/pinball/obstacleEdit";
+import {
+  pickObstacleAtPoint,
+  pickObstacleHandle,
+} from "@/lib/pinball/editSelection";
+import {
+  migrateToUnifiedLayout,
+} from "@/lib/pinball/unifiedLayout";
 
-type Vec = { x: number; y: number };
-type Ball = { pos: Vec; vel: Vec; radius: number; launched: boolean };
-type Bumper = { x: number; y: number; r: number; score: number };
-type Segment = { a: Vec; b: Vec };
+import type { LayoutData, Segment, Vec } from "@/lib/pinball/types";
+import {
+  ballRadiusForColor,
+  BOARD_HEIGHT,
+  BOARD_WIDTH,
+  CENTER_X,
+  CHANNEL_BOTTOM,
+  CHANNEL_LANE_COUNT,
+  CHANNEL_STACK_MAX,
+  CHANNEL_TOP,
+  CHANNEL_DIVIDER_X,
+  channelBallY,
+  channelLaneCenterX,
+  channelLaneFromX,
+  initialBallPos,
+  LAUNCH_ARC_CONTROL,
+  LAUNCH_DIVIDER_X,
+  LAUNCH_EXIT,
+  launchArcExitTangent,
+  launchArcStart,
+  launchDivider,
+  launchRailCenterX,
+  launchRailTravelY,
+  LAUNCH_RAIL_LEFT,
+  LAUNCH_RAIL_RIGHT,
+  PHYSICS_SCALE,
+  PLAYFIELD_RIGHT,
+  PLAYFIELD_TOP,
+  PLAYFIELD_CEILING,
+  WALL,
+} from "@/lib/pinball/boardLayout";
+
+type Ball = { pos: Vec; vel: Vec; radius: number; launched: boolean; colorIndex: PinballColorIndex };
+type SettledBall = { x: number; y: number; colorIndex: PinballColorIndex; lane: number; radius: number };
 type Flash = { x: number; y: number; r: number; life: number; color: string };
-type Triangle = { a: Vec; b: Vec; c: Vec };
-type RandomCircle = { kind: "circle"; x: number; y: number; r: number };
-type RandomRect = { kind: "rect"; x: number; y: number; w: number; h: number };
-type RandomBar = { kind: "bar"; segment: Segment };
-type RandomObstacle = RandomCircle | RandomRect | RandomBar;
 type ChargeTier = "low" | "mid" | "high";
-type LayoutData = {
-  bumpers: Bumper[];
-  rails: Segment[];
-  cornerTriangles: Triangle[];
-  randomObstacles: RandomObstacle[];
-};
-
-const BOARD_WIDTH = 420;
-const BOARD_HEIGHT = 600;
-const WALL = 18;
-const CHANNEL_HEIGHT = 110;
-const CHANNEL_TOP = BOARD_HEIGHT - WALL - CHANNEL_HEIGHT;
-const MAX_CHARGE_MS = 3000;
-const GRAVITY = 0.2;
-const DRAG = 0.998;
-const BOUNCE = 0.9;
-const LOW_TIER_MAX = 0.34;
-const MID_TIER_MAX = 0.74;
-const HIGH_TIER_MULTIPLIER = 1.2;
-const CENTER_X = BOARD_WIDTH / 2;
-const LAUNCH_RAIL_LEFT = BOARD_WIDTH - 40;
-const LAUNCH_RAIL_RIGHT = BOARD_WIDTH - 22;
-const LAUNCH_RAIL_TOP = 50;
-const LAUNCH_RAIL_BOTTOM = BOARD_HEIGHT - WALL - 14;
-const LAUNCH_ARC_START = { x: LAUNCH_RAIL_RIGHT, y: LAUNCH_RAIL_TOP + 14 };
-const LAUNCH_ARC_CONTROL = { x: CENTER_X + 90, y: 12 };
-const LAUNCH_EXIT = { x: CENTER_X, y: 74 };
-const LAUNCH_DIVIDER_X = LAUNCH_RAIL_LEFT - 8;
-const PLAYFIELD_RIGHT = LAUNCH_DIVIDER_X - 6;
+type EditDrag =
+  | { mode: "move"; key: string; lastX: number; lastY: number }
+  | { mode: "scale"; key: string; corner: number; startPointer: Vec; startScale: number }
+  | { mode: "rotate"; key: string; startAngle: number; startRotation: number; cx: number; cy: number };
 
 const channelLabels = ["+2球", "+500", "x0.5", "隨機", "-500", "x1.5"] as const;
-const bumpers: Bumper[] = [
-  { x: 136, y: 150, r: 20, score: 20 },
-  { x: 244, y: 150, r: 20, score: 20 },
-  { x: 190, y: 248, r: 24, score: 50 },
-  { x: 130, y: 356, r: 18, score: 15 },
-  { x: 250, y: 356, r: 18, score: 15 },
-  { x: 190, y: 450, r: 22, score: 30 },
-];
-const rails: Segment[] = [
-  { a: { x: 102, y: 262 }, b: { x: 158, y: 236 } },
-  { a: { x: 222, y: 236 }, b: { x: 278, y: 262 } },
-];
-const cornerTriangles: Triangle[] = [
-  // Isosceles right triangles in corner-oriented layout
-  { a: { x: 44, y: 92 }, b: { x: 140, y: 92 }, c: { x: 44, y: 188 } },
-  { a: { x: 342, y: 92 }, b: { x: 246, y: 92 }, c: { x: 342, y: 188 } },
-  { a: { x: 44, y: 438 }, b: { x: 140, y: 438 }, c: { x: 44, y: 342 } },
-  { a: { x: 342, y: 438 }, b: { x: 246, y: 438 }, c: { x: 342, y: 342 } },
-];
-const launchDivider: Segment = {
-  // Keep a top opening so launched balls can exit.
-  a: { x: LAUNCH_DIVIDER_X, y: LAUNCH_EXIT.y + 20 },
-  b: { x: LAUNCH_DIVIDER_X, y: BOARD_HEIGHT - WALL },
-};
-const defaultLayout: LayoutData = {
-  bumpers,
-  rails,
-  cornerTriangles,
-  randomObstacles: [
-    { kind: "rect", x: 104, y: 308, w: 30, h: 18 },
-    { kind: "circle", x: 104, y: 388, r: 15 },
-    { kind: "bar", segment: { a: { x: 96, y: 334 }, b: { x: 138, y: 376 } } },
-    { kind: "rect", x: 268, y: 308, w: 30, h: 18 },
-    { kind: "circle", x: 268, y: 388, r: 15 },
-    { kind: "bar", segment: { a: { x: 276, y: 334 }, b: { x: 234, y: 376 } } },
-  ],
-};
+const emptyLayout: LayoutData = { version: 2, obstacles: [] };
 
 function clamp(v: number, min: number, max: number) {
   return Math.max(min, Math.min(max, v));
@@ -99,102 +91,30 @@ function reflect(v: Vec, n: Vec): Vec {
   return { x: v.x - 2 * d * n.x, y: v.y - 2 * d * n.y };
 }
 
-function makeQuadraticSegments(start: Vec, control: Vec, end: Vec, steps: number): Segment[] {
-  const points: Vec[] = [];
-  for (let i = 0; i <= steps; i += 1) {
-    const t = i / steps;
-    const mt = 1 - t;
-    points.push({
-      x: mt * mt * start.x + 2 * mt * t * control.x + t * t * end.x,
-      y: mt * mt * start.y + 2 * mt * t * control.y + t * t * end.y,
-    });
-  }
-  const segments: Segment[] = [];
-  for (let i = 0; i < points.length - 1; i += 1) {
-    segments.push({ a: points[i], b: points[i + 1] });
-  }
-  return segments;
-}
-
-function triangleEdges(t: Triangle): Segment[] {
-  return [
-    { a: t.a, b: t.b },
-    { a: t.b, b: t.c },
-    { a: t.c, b: t.a },
-  ];
-}
-
-type TriangleOrientation = "top-left" | "top-right" | "bottom-left" | "bottom-right";
-
-function resolveTriangleOrientation(anchor: Vec): TriangleOrientation {
-  const left = anchor.x - WALL;
-  const right = PLAYFIELD_RIGHT - anchor.x;
-  const top = anchor.y - WALL;
-  const bottom = CHANNEL_TOP - anchor.y;
-  if (top <= bottom) {
-    return left <= right ? "top-left" : "top-right";
-  }
-  return left <= right ? "bottom-left" : "bottom-right";
-}
-
-function buildRightIsoscelesTriangle(
-  anchor: Vec,
-  leg: number,
-  orientation: TriangleOrientation,
-): Triangle {
-  if (orientation === "top-left") {
-    return { a: anchor, b: { x: anchor.x + leg, y: anchor.y }, c: { x: anchor.x, y: anchor.y + leg } };
-  }
-  if (orientation === "top-right") {
-    return { a: anchor, b: { x: anchor.x - leg, y: anchor.y }, c: { x: anchor.x, y: anchor.y + leg } };
-  }
-  if (orientation === "bottom-left") {
-    return { a: anchor, b: { x: anchor.x + leg, y: anchor.y }, c: { x: anchor.x, y: anchor.y - leg } };
-  }
-  return { a: anchor, b: { x: anchor.x - leg, y: anchor.y }, c: { x: anchor.x, y: anchor.y - leg } };
-}
-
-function normalizeRightIsoscelesTriangle(t: Triangle): Triangle {
-  const ab = { x: t.b.x - t.a.x, y: t.b.y - t.a.y };
-  const ac = { x: t.c.x - t.a.x, y: t.c.y - t.a.y };
-  const leg = clamp((Math.hypot(ab.x, ab.y) + Math.hypot(ac.x, ac.y)) / 2, 28, 140);
-  const anchor = {
-    x: clamp(t.a.x, WALL + 8, PLAYFIELD_RIGHT - 8),
-    y: clamp(t.a.y, WALL + 8, CHANNEL_TOP - 8),
-  };
-  const orientation = resolveTriangleOrientation(anchor);
-  return buildRightIsoscelesTriangle(anchor, leg, orientation);
-}
-
-function normalizeLayoutTriangles(layout: LayoutData): LayoutData {
-  return {
-    ...layout,
-    cornerTriangles: layout.cornerTriangles.map(normalizeRightIsoscelesTriangle),
-  };
-}
-
 function getChargeTier(ratio: number): ChargeTier {
   if (ratio < LOW_TIER_MAX) return "low";
   if (ratio < MID_TIER_MAX) return "mid";
   return "high";
 }
 
-const topCurveSegments = makeQuadraticSegments(
-  { x: WALL + 20, y: 58 },
-  { x: CENTER_X, y: 8 },
-  { x: BOARD_WIDTH - WALL - 20, y: 58 },
-  14,
-);
+const MAX_CHARGE_MS = 3000;
+const GRAVITY = 0.2 * PHYSICS_SCALE;
+const DRAG = 0.998;
+const BOUNCE = 0.72;
+const LOW_TIER_MAX = 0.34;
+const MID_TIER_MAX = 0.74;
+const HIGH_TIER_MULTIPLIER = 1.2;
+
 
 export default function PinballGame() {
+  const stageRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const canvasSizeRef = useRef({ width: BOARD_WIDTH, height: BOARD_HEIGHT });
   const audioRef = useRef<AudioContext | null>(null);
-  const marbleRef = useRef<HTMLImageElement | null>(null);
-  const marbleLoadedRef = useRef(false);
-  const playfieldBgRef = useRef<HTMLImageElement | null>(null);
-  const playfieldBgLoadedRef = useRef(false);
+  const assetsRef = useRef<LoadedPinballAssets | null>(null);
   const flashesRef = useRef<Flash[]>([]);
-  const layoutRef = useRef<LayoutData>(defaultLayout);
+  const settledBallsRef = useRef<SettledBall[]>([]);
+  const layoutRef = useRef<LayoutData>(emptyLayout);
 
   const ballsRef = useRef(5);
   const stallRewardGrantedRef = useRef(false);
@@ -210,8 +130,6 @@ export default function PinballGame() {
   const railProgressRef = useRef(0);
   const railArcProgressRef = useRef(0);
   const railSpeedRef = useRef(0.02);
-  const spawnDropRef = useRef(false);
-  const spawnYRef = useRef(0);
   const settleTimeoutRef = useRef<number | null>(null);
   const stuckFramesRef = useRef(0);
   const noticeTimeoutRef = useRef<number | null>(null);
@@ -225,142 +143,75 @@ export default function PinballGame() {
   const [balls, setBalls] = useState(5);
   const [score, setScore] = useState(0);
   const [displayScore, setDisplayScore] = useState(0);
-  const [combo, setCombo] = useState(1);
   const [chargeRatio, setChargeRatio] = useState(0);
   const [scoreFlash, setScoreFlash] = useState<"up" | "down" | null>(null);
   const [rewardText, setRewardText] = useState("");
   const [rewardVisible, setRewardVisible] = useState(false);
   const [chargeTier, setChargeTier] = useState<ChargeTier>("low");
   const [status, setStatus] = useState("按住空白鍵蓄力，放開發球");
-  const [triangleRotateInput, setTriangleRotateInput] = useState("15");
-  const [layout, setLayout] = useState<LayoutData>(defaultLayout);
+  const [rotateInput, setRotateInput] = useState("15");
+  const [layout, setLayout] = useState<LayoutData>(emptyLayout);
   const [editMode, setEditMode] = useState(false);
   const [savingLayout, setSavingLayout] = useState(false);
   const [selectedObstacle, setSelectedObstacle] = useState<string>("");
-  const dragRef = useRef<{ key: string; lastX: number; lastY: number } | null>(null);
+  const selectedObstacleRef = useRef("");
+  const editModeRef = useRef(false);
+  const dragRef = useRef<EditDrag | null>(null);
 
-  const initialBall = useMemo<Ball>(
-    () => ({
-      pos: { x: (LAUNCH_RAIL_LEFT + LAUNCH_RAIL_RIGHT) / 2, y: LAUNCH_RAIL_BOTTOM - 12 },
+  const initialBall = useMemo<Ball>(() => {
+    const colorIndex = 0 as PinballColorIndex;
+    const radius = ballRadiusForColor(colorIndex);
+    const spawn = initialBallPos(radius);
+    return {
+      pos: spawn,
       vel: { x: 0, y: 0 },
-      radius: 9,
+      radius,
       launched: false,
-    }),
-    [],
-  );
+      colorIndex,
+    };
+  }, []);
 
   const updateLayoutByKey = (key: string, dx: number, dy: number) => {
+    if (!key.startsWith("obs:")) return;
     setLayout((prev) => {
       const next: LayoutData = structuredClone(prev);
-      if (key.startsWith("bumper:")) {
-        const i = Number(key.split(":")[1]);
-        next.bumpers[i].x += dx;
-        next.bumpers[i].y += dy;
-      } else if (key.startsWith("rail:")) {
-        const i = Number(key.split(":")[1]);
-        next.rails[i].a.x += dx;
-        next.rails[i].a.y += dy;
-        next.rails[i].b.x += dx;
-        next.rails[i].b.y += dy;
-      } else if (key.startsWith("tri:")) {
-        const i = Number(key.split(":")[1]);
-        next.cornerTriangles[i].a.x += dx;
-        next.cornerTriangles[i].a.y += dy;
-        next.cornerTriangles[i].b.x += dx;
-        next.cornerTriangles[i].b.y += dy;
-        next.cornerTriangles[i].c.x += dx;
-        next.cornerTriangles[i].c.y += dy;
-      } else if (key.startsWith("obs:")) {
-        const i = Number(key.split(":")[1]);
-        const obs = next.randomObstacles[i];
-        if (obs.kind === "circle" || obs.kind === "rect") {
-          obs.x += dx;
-          obs.y += dy;
-        } else {
-          obs.segment.a.x += dx;
-          obs.segment.a.y += dy;
-          obs.segment.b.x += dx;
-          obs.segment.b.y += dy;
-        }
-      }
-      return normalizeLayoutTriangles(next);
+      updateObstacleByKey(next, key, (obs) => translateObstacle(obs, dx, dy));
+      layoutRef.current = next;
+      return next;
     });
   };
 
   const scaleLayoutByKey = (key: string, factor: number) => {
+    if (!key.startsWith("obs:")) return;
     setLayout((prev) => {
       const next: LayoutData = structuredClone(prev);
-      if (key.startsWith("bumper:")) {
-        const i = Number(key.split(":")[1]);
-        next.bumpers[i].r = clamp(next.bumpers[i].r * factor, 8, 48);
-      } else if (key.startsWith("obs:")) {
-        const i = Number(key.split(":")[1]);
-        const obs = next.randomObstacles[i];
-        if (obs.kind === "circle") obs.r = clamp(obs.r * factor, 8, 40);
-        if (obs.kind === "rect") {
-          obs.w = clamp(obs.w * factor, 12, 80);
-          obs.h = clamp(obs.h * factor, 10, 70);
-        }
-        if (obs.kind === "bar") {
-          const mx = (obs.segment.a.x + obs.segment.b.x) / 2;
-          const my = (obs.segment.a.y + obs.segment.b.y) / 2;
-          obs.segment.a.x = mx + (obs.segment.a.x - mx) * factor;
-          obs.segment.a.y = my + (obs.segment.a.y - my) * factor;
-          obs.segment.b.x = mx + (obs.segment.b.x - mx) * factor;
-          obs.segment.b.y = my + (obs.segment.b.y - my) * factor;
-        }
-      } else if (key.startsWith("tri:")) {
-        const i = Number(key.split(":")[1]);
-        const t = next.cornerTriangles[i];
-        const cx = (t.a.x + t.b.x + t.c.x) / 3;
-        const cy = (t.a.y + t.b.y + t.c.y) / 3;
-        t.a.x = cx + (t.a.x - cx) * factor;
-        t.a.y = cy + (t.a.y - cy) * factor;
-        t.b.x = cx + (t.b.x - cx) * factor;
-        t.b.y = cy + (t.b.y - cy) * factor;
-        t.c.x = cx + (t.c.x - cx) * factor;
-        t.c.y = cy + (t.c.y - cy) * factor;
-      }
-      return normalizeLayoutTriangles(next);
+      updateObstacleByKey(next, key, (obs) => scaleObstacleUniform(obs, factor));
+      layoutRef.current = next;
+      return next;
     });
   };
 
-  const rotateTriangleByKey = (key: string, degree: number) => {
-    if (!key.startsWith("tri:")) return;
+  const deleteObstacleByKey = (key: string) => {
+    if (!key.startsWith("obs:")) return;
+    const i = Number(key.split(":")[1]);
     setLayout((prev) => {
-      const next: LayoutData = structuredClone(prev);
-      const i = Number(key.split(":")[1]);
-      const t = next.cornerTriangles[i];
-      const cx = (t.a.x + t.b.x + t.c.x) / 3;
-      const cy = (t.a.y + t.b.y + t.c.y) / 3;
-      const rad = (degree * Math.PI) / 180;
-      const rot = (p: Vec): Vec => ({
-        x: cx + (p.x - cx) * Math.cos(rad) - (p.y - cy) * Math.sin(rad),
-        y: cy + (p.x - cx) * Math.sin(rad) + (p.y - cy) * Math.cos(rad),
-      });
-      t.a = rot(t.a);
-      t.b = rot(t.b);
-      t.c = rot(t.c);
-      return normalizeLayoutTriangles(next);
+      const next: LayoutData = {
+        version: prev.version,
+        obstacles: prev.obstacles.filter((_, idx) => idx !== i),
+      };
+      layoutRef.current = next;
+      return next;
     });
+    setSelectedObstacle("");
   };
 
-  const stretchTriangleByKey = (key: string, factorX: number, factorY: number) => {
-    if (!key.startsWith("tri:")) return;
+  const rotateObstacleByKey = (key: string, degree: number) => {
+    if (!key.startsWith("obs:")) return;
     setLayout((prev) => {
       const next: LayoutData = structuredClone(prev);
-      const i = Number(key.split(":")[1]);
-      const t = next.cornerTriangles[i];
-      const cx = (t.a.x + t.b.x + t.c.x) / 3;
-      const cy = (t.a.y + t.b.y + t.c.y) / 3;
-      const stretch = (p: Vec): Vec => ({
-        x: cx + (p.x - cx) * factorX,
-        y: cy + (p.y - cy) * factorY,
-      });
-      t.a = stretch(t.a);
-      t.b = stretch(t.b);
-      t.c = stretch(t.c);
-      return normalizeLayoutTriangles(next);
+      updateObstacleByKey(next, key, (obs) => rotateObstacleDegrees(obs, degree));
+      layoutRef.current = next;
+      return next;
     });
   };
 
@@ -369,12 +220,27 @@ export default function PinballGame() {
   }, [layout]);
 
   useEffect(() => {
+    selectedObstacleRef.current = selectedObstacle;
+  }, [selectedObstacle]);
+
+  useEffect(() => {
+    editModeRef.current = editMode;
+    if (editMode) {
+      setStatus("編輯模式：拖曳移動；拖角點縮放、↻ 旋轉；繪製與碰撞皆用 PNG 不透明邊緣");
+    } else {
+      setSelectedObstacle("");
+      setStatus("按住空白鍵蓄力，放開發球");
+    }
+  }, [editMode]);
+
+  useEffect(() => {
     const loadLayout = async () => {
       try {
         const res = await fetch("/api/pinball-layout");
         if (!res.ok) return;
-        const data = (await res.json()) as LayoutData;
-        setLayout(normalizeLayoutTriangles(data));
+        const data = migrateToUnifiedLayout(await res.json());
+        layoutRef.current = data;
+        setLayout(data);
       } catch {
         // keep default layout
       }
@@ -398,28 +264,16 @@ export default function PinballGame() {
   }, [score]);
 
   useEffect(() => {
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.src =
-      "https://upload.wikimedia.org/wikipedia/commons/thumb/1/10/Marbles_01.jpg/256px-Marbles_01.jpg";
-    img.onload = () => {
-      marbleRef.current = img;
-      marbleLoadedRef.current = true;
-    };
-    img.onerror = () => {
-      marbleLoadedRef.current = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    const img = new Image();
-    img.src = "/playfield-bg.jpg";
-    img.onload = () => {
-      playfieldBgRef.current = img;
-      playfieldBgLoadedRef.current = true;
-    };
-    img.onerror = () => {
-      playfieldBgLoadedRef.current = false;
+    let cancelled = false;
+    loadPinballAssets()
+      .then((assets) => {
+        if (!cancelled) assetsRef.current = assets;
+      })
+      .catch(() => {
+        assetsRef.current = null;
+      });
+    return () => {
+      cancelled = true;
     };
   }, []);
 
@@ -429,6 +283,8 @@ export default function PinballGame() {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     const ball: Ball = structuredClone(initialBall);
+    ball.colorIndex = randomPinballColor();
+    ball.radius = ballRadiusForColor(ball.colorIndex);
 
     const tone = (f: number, ms: number, type: OscillatorType, gain = 0.04) => {
       try {
@@ -479,8 +335,10 @@ export default function PinballGame() {
     };
 
     const resetBall = () => {
-      ball.pos = { ...initialBall.pos };
-      ball.vel = { ...initialBall.vel };
+      ball.colorIndex = randomPinballColor();
+      ball.radius = ballRadiusForColor(ball.colorIndex);
+      ball.pos = { ...initialBallPos(ball.radius) };
+      ball.vel = { x: 0, y: 0 };
       ball.launched = false;
       inRailRef.current = false;
       railPhaseRef.current = 0;
@@ -499,9 +357,6 @@ export default function PinballGame() {
 
     const spawnNextBall = () => {
       resetBall();
-      spawnDropRef.current = true;
-      spawnYRef.current = initialBall.pos.y - 26;
-      ball.pos.y = spawnYRef.current;
       setStatus("新彈珠已就位，按住空白鍵蓄力");
     };
 
@@ -514,7 +369,6 @@ export default function PinballGame() {
       ballsRef.current -= 1;
       setBalls(ballsRef.current);
       comboRef.current = 1;
-      setCombo(1);
       roundScoreRef.current = 0;
       scoreMultiplierRef.current = p >= 0.999 ? HIGH_TIER_MULTIPLIER : 1;
       ball.launched = true;
@@ -532,8 +386,8 @@ export default function PinballGame() {
 
     const collideWalls = () => {
       const left = WALL + ball.radius;
-      const right = BOARD_WIDTH - WALL - ball.radius;
-      const top = WALL + ball.radius;
+      const right = LAUNCH_DIVIDER_X - ball.radius;
+      const top = PLAYFIELD_CEILING + ball.radius;
       if (ball.pos.x < left) {
         ball.pos.x = left;
         ball.vel.x = Math.abs(ball.vel.x) * BOUNCE;
@@ -559,8 +413,8 @@ export default function PinballGame() {
       ball.pos.x = c.x + n.x * (ball.radius + 1.5);
       ball.pos.y = c.y + n.y * (ball.radius + 1.5);
       ball.vel = reflect(ball.vel, n);
-      ball.vel.x *= 0.94;
-      ball.vel.y *= 0.94;
+      ball.vel.x *= 0.86;
+      ball.vel.y *= 0.86;
       flashesRef.current.push({ x: c.x, y: c.y, r: 24, life: 1, color: "255,220,120" });
       tone(170, 26, "square", 0.02);
       return true;
@@ -568,83 +422,61 @@ export default function PinballGame() {
 
     const collideSeparators = () => {
       if (ball.pos.y + ball.radius < CHANNEL_TOP) return;
-      const laneW = (PLAYFIELD_RIGHT - WALL) / channelLabels.length;
-      for (let i = 1; i < channelLabels.length; i += 1) {
-        const x = WALL + laneW * i;
+      for (const x of CHANNEL_DIVIDER_X) {
         if (Math.abs(ball.pos.x - x) < ball.radius + 2) {
           const dir = ball.pos.x < x ? -1 : 1;
           ball.pos.x = x + dir * (ball.radius + 2);
-          ball.vel.x = dir * Math.abs(ball.vel.x) * 0.9;
+          ball.vel.x = dir * Math.abs(ball.vel.x) * 0.72;
           flashesRef.current.push({ x, y: ball.pos.y, r: 14, life: 1, color: "255,210,100" });
           tone(190, 24, "square", 0.02);
         }
       }
     };
 
-    const collideRect = (x: number, y: number, w: number, h: number) => {
-      const cx = clamp(ball.pos.x, x - w / 2, x + w / 2);
-      const cy = clamp(ball.pos.y, y - h / 2, y + h / 2);
-      const off = { x: ball.pos.x - cx, y: ball.pos.y - cy };
-      const dist = Math.hypot(off.x, off.y);
-      if (dist >= ball.radius + 1) return;
-      const n = normalize(dist < 1e-4 ? { x: 0, y: -1 } : off);
-      ball.pos.x = cx + n.x * (ball.radius + 1);
-      ball.pos.y = cy + n.y * (ball.radius + 1);
-      ball.vel = reflect(ball.vel, n);
-      ball.vel.x *= 0.95;
-      ball.vel.y *= 0.95;
-      flashesRef.current.push({ x: cx, y: cy, r: 30, life: 1, color: "255,200,130" });
-      tone(210, 28, "square", 0.018);
-    };
-
-    const collideRandomObstacle = (obs: RandomObstacle) => {
-      if (obs.kind === "circle") {
-        const dx = ball.pos.x - obs.x;
-        const dy = ball.pos.y - obs.y;
-        const dist = Math.hypot(dx, dy);
-        const minDist = ball.radius + obs.r;
-        if (dist >= minDist) return;
-        const n = normalize({ x: dx, y: dy });
-        ball.pos.x = obs.x + n.x * minDist;
-        ball.pos.y = obs.y + n.y * minDist;
-        ball.vel = reflect(ball.vel, n);
-        ball.vel.x *= 0.96;
-        ball.vel.y *= 0.96;
-        flashesRef.current.push({ x: obs.x, y: obs.y, r: 34, life: 1, color: "255,210,130" });
-        tone(230, 30, "square", 0.02);
-        addRoundPoints(10, "up");
-        return;
+    const collideImageObstacles = () => {
+      const assets = assetsRef.current;
+      if (!assets) return;
+      for (let pass = 0; pass < 2; pass += 1) {
+        for (const obs of layoutRef.current.obstacles) {
+          const body = assets.bodies[obs.kind];
+          const placed = { x: obs.x, y: obs.y, rotation: obs.rotation, scale: obs.scale };
+          const restitution = obs.score ? 0.96 : obs.kind === "triangle" ? 0.76 : 0.82;
+          const res = collideBallWithImageBody(
+            ball.pos,
+            ball.vel,
+            ball.radius,
+            body,
+            placed,
+            restitution,
+          );
+          if (!res.hit) continue;
+          ball.pos = res.pos;
+          ball.vel = res.vel;
+          if (pass === 0) {
+            flashesRef.current.push({
+              x: res.contact.x,
+              y: res.contact.y,
+              r: obs.score ? 50 : 24,
+              life: 1,
+              color: obs.score ? "120,235,255" : "255,220,120",
+            });
+            if (obs.score) {
+              lastHitRef.current = performance.now();
+              addRoundPoints(obs.score, "up");
+              tone(500 + comboRef.current * 35, 70, "sine");
+            } else if (obs.kind === "triangle") {
+              addRoundPoints(30, "up");
+              tone(170, 26, "square", 0.02);
+            } else {
+              tone(170, 26, "square", 0.02);
+            }
+          }
+        }
       }
-      if (obs.kind === "rect") {
-        collideRect(obs.x, obs.y, obs.w, obs.h);
-        return;
-      }
-      collideSegment(obs.segment);
-    };
-
-    const collideBumper = (b: Bumper) => {
-      const dx = ball.pos.x - b.x;
-      const dy = ball.pos.y - b.y;
-      const dist = Math.hypot(dx, dy);
-      const minDist = ball.radius + b.r;
-      if (dist >= minDist) return;
-      const n = normalize({ x: dx, y: dy });
-      ball.pos.x = b.x + n.x * minDist;
-      ball.pos.y = b.y + n.y * minDist;
-      ball.vel = reflect(ball.vel, n);
-      ball.vel.x *= 1.03;
-      ball.vel.y *= 1.03;
-
-      lastHitRef.current = performance.now();
-      addRoundPoints(10, "up");
-      flashesRef.current.push({ x: b.x, y: b.y, r: 50, life: 1, color: "120,235,255" });
-      tone(500 + comboRef.current * 35, 70, "sine");
     };
 
     const resolveChannel = () => {
-      const inner = PLAYFIELD_RIGHT - WALL;
-      const laneW = inner / channelLabels.length;
-      const lane = clamp(Math.floor((ball.pos.x - WALL) / laneW), 0, channelLabels.length - 1);
+      const lane = channelLaneFromX(ball.pos.x);
       const prevScore = scoreRef.current;
       let msg = `通道 ${lane + 1}：`;
       if (lane === 0) {
@@ -668,7 +500,6 @@ export default function PinballGame() {
           msg += `隨機道具：+${gain}分`;
         } else {
           comboRef.current = Math.min(comboRef.current + 1, 5);
-          setCombo(comboRef.current);
           msg += "隨機道具：連擊+1";
         }
       } else if (lane === 4) {
@@ -686,13 +517,26 @@ export default function PinballGame() {
       runDoneRef.current = true;
       ball.launched = false;
       ball.vel = { x: 0, y: 0 };
-      // Hide ball while waiting for next round spawn.
+
+      const laneCx = channelLaneCenterX(lane);
+      const laneStack = settledBallsRef.current.filter((s) => s.lane === lane).length;
+      const stackIndex = Math.min(laneStack, CHANNEL_STACK_MAX - 1);
+      if (laneStack < CHANNEL_STACK_MAX) {
+        settledBallsRef.current.push({
+          x: laneCx,
+          y: channelBallY(stackIndex, ball.radius),
+          colorIndex: ball.colorIndex,
+          lane,
+          radius: ball.radius,
+        });
+      }
+
       ball.pos = { x: -999, y: -999 };
       setStatus(msg);
       tone(lane === 3 ? 130 : 650, 170, "triangle", 0.06);
       flashesRef.current.push({
-        x: ball.pos.x,
-        y: ball.pos.y,
+        x: laneCx,
+        y: channelBallY(stackIndex, ball.radius),
         r: 48,
         life: 1,
         color: lane === 3 ? "255,90,90" : "255,245,120",
@@ -713,334 +557,35 @@ export default function PinballGame() {
       }, 2000);
     };
 
+    const syncCanvasSize = () => {
+      canvas.width = BOARD_WIDTH;
+      canvas.height = BOARD_HEIGHT;
+      canvasSizeRef.current = { width: BOARD_WIDTH, height: BOARD_HEIGHT };
+    };
+
+    syncCanvasSize();
+
     const draw = () => {
-      ctx.clearRect(0, 0, BOARD_WIDTH, BOARD_HEIGHT);
-      const wood = ctx.createLinearGradient(0, 0, 0, BOARD_HEIGHT);
-      wood.addColorStop(0, "#5b442f");
-      wood.addColorStop(0.5, "#684d34");
-      wood.addColorStop(1, "#3d2d20");
-      ctx.fillStyle = wood;
-      ctx.fillRect(0, 0, BOARD_WIDTH, BOARD_HEIGHT);
+      const assets = assetsRef.current;
+      const { width: cw, height: ch } = canvasSizeRef.current;
+      ctx.clearRect(0, 0, cw, ch);
+      drawPinballBackground(ctx, assets, cw, ch);
 
-      const plastic = ctx.createLinearGradient(0, WALL, 0, CHANNEL_TOP);
-      plastic.addColorStop(0, "rgba(236,236,236,0.58)");
-      plastic.addColorStop(1, "rgba(166,166,166,0.46)");
-      ctx.fillStyle = plastic;
-      ctx.fillRect(WALL, WALL, BOARD_WIDTH - WALL * 2, BOARD_HEIGHT - WALL * 2);
-      if (playfieldBgLoadedRef.current && playfieldBgRef.current) {
-        ctx.save();
-        ctx.globalAlpha = 0.28;
-        ctx.drawImage(playfieldBgRef.current, WALL, WALL, PLAYFIELD_RIGHT - WALL, CHANNEL_TOP - WALL);
-        ctx.restore();
-      }
+      drawObstacleSprites(
+        ctx,
+        assets,
+        layoutRef.current,
+        editModeRef.current ? selectedObstacleRef.current : "",
+        editModeRef.current,
+      );
 
-      ctx.strokeStyle = "rgba(255,210,110,0.95)";
-      ctx.lineWidth = 2;
-      ctx.strokeRect(WALL, WALL, BOARD_WIDTH - WALL * 2, BOARD_HEIGHT - WALL * 2);
-
-      ctx.strokeStyle = "#7f1d1d";
-      ctx.lineWidth = 7;
-      for (const s of layoutRef.current.rails) {
-        ctx.save();
-        ctx.shadowColor = "rgba(0,0,0,0.4)";
-        ctx.shadowBlur = 6;
-        ctx.beginPath();
-        ctx.moveTo(s.a.x, s.a.y);
-        ctx.lineTo(s.b.x, s.b.y);
-        ctx.stroke();
-        ctx.restore();
-        ctx.strokeStyle = "rgba(255,236,138,0.7)";
-        ctx.lineWidth = 2.2;
-        ctx.beginPath();
-        ctx.moveTo(s.a.x + 1, s.a.y - 1);
-        ctx.lineTo(s.b.x + 1, s.b.y - 1);
-        ctx.stroke();
-        ctx.strokeStyle = "#7f1d1d";
-        ctx.lineWidth = 7;
-      }
-
-      ctx.strokeStyle = "rgba(232,96,48,0.9)";
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.moveTo(topCurveSegments[0].a.x, topCurveSegments[0].a.y);
-      for (const s of topCurveSegments) ctx.lineTo(s.b.x, s.b.y);
-      ctx.stroke();
-
-      ctx.strokeStyle = "rgba(255,214,120,0.92)";
-      ctx.lineWidth = 2;
-      ctx.strokeRect(LAUNCH_RAIL_LEFT, LAUNCH_RAIL_TOP, 18, LAUNCH_RAIL_BOTTOM - LAUNCH_RAIL_TOP);
-      ctx.beginPath();
-      ctx.moveTo(LAUNCH_ARC_START.x, LAUNCH_ARC_START.y);
-      ctx.quadraticCurveTo(LAUNCH_ARC_CONTROL.x, LAUNCH_ARC_CONTROL.y, LAUNCH_EXIT.x, LAUNCH_EXIT.y);
-      ctx.stroke();
-      ctx.strokeStyle = "rgba(232,94,45,0.92)";
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.moveTo(launchDivider.a.x, launchDivider.a.y);
-      ctx.lineTo(launchDivider.b.x, launchDivider.b.y);
-      ctx.stroke();
-
-      for (const b of layoutRef.current.bumpers) {
-        const rg = ctx.createRadialGradient(
-          b.x - b.r * 0.24,
-          b.y - b.r * 0.26,
-          2,
-          b.x,
-          b.y,
-          b.r,
-        );
-        rg.addColorStop(0, "rgba(255,255,255,0.98)");
-        rg.addColorStop(0.45, "rgba(255,242,184,0.95)");
-        rg.addColorStop(1, "rgba(148,26,26,0.99)");
-        ctx.fillStyle = rg;
-        ctx.beginPath();
-        ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.strokeStyle = "rgba(255,226,120,0.95)";
-        ctx.lineWidth = 2.1;
-        ctx.stroke();
-      }
-
-      for (const tri of layoutRef.current.cornerTriangles) {
-        const tg = ctx.createLinearGradient(tri.a.x, tri.a.y, tri.c.x, tri.c.y);
-        tg.addColorStop(0, "rgba(255,255,255,0.88)");
-        tg.addColorStop(0.45, "rgba(255,224,130,0.9)");
-        tg.addColorStop(1, "rgba(147,28,28,0.92)");
-        ctx.fillStyle = tg;
-        ctx.strokeStyle = "rgba(255,218,120,0.95)";
-        ctx.lineWidth = 2.3;
-        ctx.beginPath();
-        ctx.moveTo(tri.a.x, tri.a.y);
-        ctx.lineTo(tri.b.x, tri.b.y);
-        ctx.lineTo(tri.c.x, tri.c.y);
-        ctx.closePath();
-        ctx.fill();
-        ctx.stroke();
-      }
-
-      for (const obs of layoutRef.current.randomObstacles) {
-        ctx.strokeStyle = "rgba(255,228,148,0.9)";
-        ctx.fillStyle = "rgba(255,228,148,0.2)";
-        ctx.lineWidth = 2.2;
-        if (obs.kind === "circle") {
-          const og = ctx.createRadialGradient(
-            obs.x - obs.r * 0.25,
-            obs.y - obs.r * 0.25,
-            2,
-            obs.x,
-            obs.y,
-            obs.r,
-          );
-          og.addColorStop(0, "rgba(255,255,255,0.98)");
-          og.addColorStop(0.48, "rgba(255,244,196,0.92)");
-          og.addColorStop(1, "rgba(136,24,24,0.98)");
-          ctx.fillStyle = og;
-          ctx.beginPath();
-          ctx.arc(obs.x, obs.y, obs.r, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.strokeStyle = "rgba(255,226,130,0.95)";
-          ctx.stroke();
-        } else if (obs.kind === "rect") {
-          const rx = obs.x - obs.w / 2;
-          const ry = obs.y - obs.h / 2;
-          const rg = ctx.createLinearGradient(rx, ry, rx, ry + obs.h);
-          rg.addColorStop(0, "rgba(255,255,255,0.8)");
-          rg.addColorStop(1, "rgba(145,30,30,0.9)");
-          ctx.fillStyle = rg;
-          ctx.fillRect(rx, ry, obs.w, obs.h);
-          ctx.strokeStyle = "rgba(250,235,170,0.85)";
-          ctx.strokeRect(rx, ry, obs.w, obs.h);
-          ctx.strokeStyle = "rgba(99,24,24,0.78)";
-          ctx.beginPath();
-          ctx.moveTo(rx, ry + obs.h);
-          ctx.lineTo(rx + obs.w, ry + obs.h);
-          ctx.stroke();
-        } else {
-          ctx.save();
-          ctx.shadowColor = "rgba(0,0,0,0.32)";
-          ctx.shadowBlur = 4;
-          const tube = ctx.createLinearGradient(
-            obs.segment.a.x,
-            obs.segment.a.y,
-            obs.segment.b.x,
-            obs.segment.b.y,
-          );
-          tube.addColorStop(0, "rgba(255,255,255,0.68)");
-          tube.addColorStop(0.35, "rgba(255,222,130,0.72)");
-          tube.addColorStop(1, "rgba(174,24,24,0.85)");
-          ctx.strokeStyle = tube;
-          ctx.lineWidth = 8;
-          ctx.beginPath();
-          ctx.moveTo(obs.segment.a.x, obs.segment.a.y);
-          ctx.lineTo(obs.segment.b.x, obs.segment.b.y);
-          ctx.stroke();
-          ctx.restore();
-          ctx.strokeStyle = "rgba(255,255,255,0.6)";
-          ctx.lineWidth = 2;
-          ctx.beginPath();
-          ctx.moveTo(obs.segment.a.x + 1, obs.segment.a.y - 1);
-          ctx.lineTo(obs.segment.b.x + 1, obs.segment.b.y - 1);
-          ctx.stroke();
-          ctx.strokeStyle = "rgba(255,236,140,0.8)";
-          ctx.lineWidth = 1;
-          ctx.beginPath();
-          ctx.moveTo(obs.segment.a.x - 1, obs.segment.a.y + 1);
-          ctx.lineTo(obs.segment.b.x - 1, obs.segment.b.y + 1);
-          ctx.stroke();
-          ctx.strokeStyle = "rgba(255,228,148,0.9)";
-          ctx.lineWidth = 2.2;
+      if (!editModeRef.current) {
+        for (const settled of settledBallsRef.current) {
+          drawPinballSprite(ctx, assets, settled.x, settled.y, settled.colorIndex);
         }
+        drawPinballSprite(ctx, assets, ball.pos.x, ball.pos.y, ball.colorIndex);
+        drawChargeMeter(ctx, assets, chargeRatioRef.current);
       }
-
-      const inner = PLAYFIELD_RIGHT - WALL;
-      const laneW = inner / channelLabels.length;
-      for (let i = 0; i < channelLabels.length; i += 1) {
-        const x = WALL + i * laneW;
-        ctx.strokeStyle = "rgba(133,40,30,0.88)";
-        ctx.lineWidth = 1;
-        ctx.strokeRect(x, CHANNEL_TOP, laneW, CHANNEL_HEIGHT);
-
-        const cx = x + laneW / 2;
-        const cy = CHANNEL_TOP + 20;
-        ctx.strokeStyle = "rgba(255,220,130,0.95)";
-        ctx.fillStyle = "rgba(120,30,20,0.78)";
-        ctx.lineWidth = 1.4;
-        // Retro icon badges instead of text labels.
-        if (i === 0) {
-          ctx.beginPath();
-          ctx.arc(cx - 7, cy, 5, 0, Math.PI * 2);
-          ctx.arc(cx + 7, cy, 5, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.stroke();
-        } else if (i === 1) {
-          ctx.fillRect(cx - 10, cy - 6, 20, 12);
-          ctx.strokeRect(cx - 10, cy - 6, 20, 12);
-        } else if (i === 2 || i === 5) {
-          ctx.beginPath();
-          ctx.moveTo(cx - 10, cy + 5);
-          ctx.lineTo(cx, cy - 8);
-          ctx.lineTo(cx + 10, cy + 5);
-          ctx.closePath();
-          ctx.fill();
-          ctx.stroke();
-          if (i === 2) {
-            ctx.beginPath();
-            ctx.moveTo(cx - 6, cy - 10);
-            ctx.lineTo(cx + 6, cy - 10);
-            ctx.stroke();
-          } else {
-            ctx.beginPath();
-            ctx.moveTo(cx, cy - 12);
-            ctx.lineTo(cx, cy + 8);
-            ctx.stroke();
-          }
-        } else if (i === 3) {
-          ctx.beginPath();
-          ctx.moveTo(cx - 10, cy);
-          ctx.lineTo(cx + 10, cy);
-          ctx.stroke();
-          ctx.beginPath();
-          ctx.moveTo(cx, cy - 9);
-          ctx.lineTo(cx, cy + 9);
-          ctx.stroke();
-        } else {
-          ctx.beginPath();
-          ctx.arc(cx, cy, 7, 0, Math.PI * 2);
-          ctx.stroke();
-          ctx.beginPath();
-          ctx.moveTo(cx - 6, cy - 6);
-          ctx.lineTo(cx + 6, cy + 6);
-          ctx.stroke();
-        }
-      }
-      ctx.strokeStyle = "rgba(255,210,110,0.95)";
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(WALL, CHANNEL_TOP);
-      ctx.lineTo(PLAYFIELD_RIGHT, CHANNEL_TOP);
-      ctx.stroke();
-
-      if (marbleLoadedRef.current && marbleRef.current) {
-        ctx.save();
-        ctx.beginPath();
-        ctx.arc(ball.pos.x, ball.pos.y, ball.radius, 0, Math.PI * 2);
-        ctx.clip();
-        ctx.drawImage(
-          marbleRef.current,
-          ball.pos.x - ball.radius,
-          ball.pos.y - ball.radius,
-          ball.radius * 2,
-          ball.radius * 2,
-        );
-        ctx.restore();
-      } else {
-        ctx.fillStyle = "#95dfff";
-        ctx.beginPath();
-        ctx.arc(ball.pos.x, ball.pos.y, ball.radius, 0, Math.PI * 2);
-        ctx.fill();
-      }
-
-      // Glass-like reflection layers for the marble.
-      const glassBody = ctx.createRadialGradient(
-        ball.pos.x - ball.radius * 0.22,
-        ball.pos.y - ball.radius * 0.28,
-        1,
-        ball.pos.x,
-        ball.pos.y,
-        ball.radius + 2,
-      );
-      glassBody.addColorStop(0, "rgba(255,255,255,0.28)");
-      glassBody.addColorStop(0.6, "rgba(255,255,255,0.08)");
-      glassBody.addColorStop(1, "rgba(255,255,255,0)");
-      ctx.fillStyle = glassBody;
-      ctx.beginPath();
-      ctx.arc(ball.pos.x, ball.pos.y, ball.radius + 1, 0, Math.PI * 2);
-      ctx.fill();
-
-      ctx.save();
-      ctx.globalAlpha = 0.8;
-      ctx.strokeStyle = "rgba(255,255,255,0.8)";
-      ctx.lineWidth = 1.6;
-      ctx.beginPath();
-      ctx.arc(
-        ball.pos.x - ball.radius * 0.12,
-        ball.pos.y - ball.radius * 0.14,
-        ball.radius * 0.63,
-        Math.PI * 1.08,
-        Math.PI * 1.78,
-      );
-      ctx.stroke();
-      ctx.restore();
-
-      const specular = ctx.createRadialGradient(
-        ball.pos.x - ball.radius * 0.42,
-        ball.pos.y - ball.radius * 0.45,
-        0.5,
-        ball.pos.x - ball.radius * 0.42,
-        ball.pos.y - ball.radius * 0.45,
-        ball.radius * 0.44,
-      );
-      specular.addColorStop(0, "rgba(255,255,255,0.95)");
-      specular.addColorStop(1, "rgba(255,255,255,0)");
-      ctx.fillStyle = specular;
-      ctx.beginPath();
-      ctx.arc(
-        ball.pos.x - ball.radius * 0.42,
-        ball.pos.y - ball.radius * 0.45,
-        ball.radius * 0.44,
-        0,
-        Math.PI * 2,
-      );
-      ctx.fill();
-
-      ctx.save();
-      ctx.shadowColor = "rgba(145,240,255,0.9)";
-      ctx.shadowBlur = 16;
-      ctx.strokeStyle = "rgba(175,240,255,0.95)";
-      ctx.beginPath();
-      ctx.arc(ball.pos.x, ball.pos.y, ball.radius + 1, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.restore();
 
       flashesRef.current = flashesRef.current
         .map((f) => ({ ...f, life: f.life - 0.06 }))
@@ -1054,27 +599,11 @@ export default function PinballGame() {
         ctx.arc(f.x, f.y, f.r, 0, Math.PI * 2);
         ctx.fill();
       }
-
-      // Corner vignette to calm the overall contrast.
-      const corners = [
-        [WALL, WALL],
-        [BOARD_WIDTH - WALL, WALL],
-        [WALL, BOARD_HEIGHT - WALL],
-        [BOARD_WIDTH - WALL, BOARD_HEIGHT - WALL],
-      ] as const;
-      for (const [cx, cy] of corners) {
-        const vg = ctx.createRadialGradient(cx, cy, 6, cx, cy, 96);
-        vg.addColorStop(0, "rgba(0,0,0,0.38)");
-        vg.addColorStop(1, "rgba(0,0,0,0)");
-        ctx.fillStyle = vg;
-        ctx.beginPath();
-        ctx.arc(cx, cy, 100, 0, Math.PI * 2);
-        ctx.fill();
-      }
     };
 
     let raf = 0;
     const tick = () => {
+      if (!editModeRef.current) {
       if (chargingRef.current && !ball.launched && !runDoneRef.current) {
         const linear = clamp((performance.now() - chargeStartRef.current) / MAX_CHARGE_MS, 0, 1);
         const p = Math.pow(linear, 1.85);
@@ -1084,21 +613,16 @@ export default function PinballGame() {
       }
 
       if (!ball.launched) {
-        ball.pos.x = initialBall.pos.x;
-        if (spawnDropRef.current) {
-          spawnYRef.current += 1.2;
-          ball.pos.y = Math.min(initialBall.pos.y, spawnYRef.current);
-          if (ball.pos.y >= initialBall.pos.y) spawnDropRef.current = false;
-        } else {
-          ball.pos.y = initialBall.pos.y;
-        }
-      } else {
-        if (inRailRef.current) {
+        const railLeft = LAUNCH_RAIL_LEFT + ball.radius;
+        const railRight = LAUNCH_RAIL_RIGHT - ball.radius;
+        ball.pos.x = clamp(ball.pos.x, railLeft, railRight);
+        ball.pos.y = initialBallPos(ball.radius).y;
+      } else if (inRailRef.current) {
           if (railPhaseRef.current === 0) {
             railProgressRef.current += railSpeedRef.current * railDirRef.current;
             const t = clamp(railProgressRef.current, 0, 1);
-            ball.pos.x = (LAUNCH_RAIL_LEFT + LAUNCH_RAIL_RIGHT) / 2;
-            ball.pos.y = LAUNCH_RAIL_BOTTOM - (LAUNCH_RAIL_BOTTOM - LAUNCH_RAIL_TOP - 16) * t;
+            ball.pos.x = launchRailCenterX();
+            ball.pos.y = launchRailTravelY(ball.radius, t);
             if (lowPowerFallbackRef.current && railDirRef.current > 0 && t >= 0.62) {
               railDirRef.current = -1;
             } else if (railDirRef.current < 0 && t <= 0) {
@@ -1106,8 +630,7 @@ export default function PinballGame() {
               inRailRef.current = false;
               runDoneRef.current = true;
               ball.launched = false;
-              ball.vel = { x: 0, y: 0 };
-              ball.pos = { x: -999, y: -999 };
+              resetBall();
               setStatus("力度不足，彈珠沿軌道滑回去（本次機會已消耗）");
               tone(180, 130, "square", 0.05);
               if (settleTimeoutRef.current) window.clearTimeout(settleTimeoutRef.current);
@@ -1128,25 +651,30 @@ export default function PinballGame() {
               railArcProgressRef.current = 0;
             }
           } else {
+            const arcStart = launchArcStart(ball.radius);
             railArcProgressRef.current += railSpeedRef.current * 0.8;
             const t = clamp(railArcProgressRef.current, 0, 1);
             const mt = 1 - t;
             ball.pos.x =
-              mt * mt * LAUNCH_ARC_START.x +
+              mt * mt * arcStart.x +
               2 * mt * t * LAUNCH_ARC_CONTROL.x +
               t * t * LAUNCH_EXIT.x;
             ball.pos.y =
-              mt * mt * LAUNCH_ARC_START.y +
+              mt * mt * arcStart.y +
               2 * mt * t * LAUNCH_ARC_CONTROL.y +
               t * t * LAUNCH_EXIT.y;
             if (t >= 1) {
               inRailRef.current = false;
               ball.pos.x = LAUNCH_EXIT.x;
               ball.pos.y = LAUNCH_EXIT.y;
-              const spreadX = (Math.random() - 0.5) * 1.8 + (0.5 - chargeRatioRef.current) * 1.0;
               const launchPower = launchPowerRef.current;
-              const linearBoost = 0.65 + launchPower * 1.4;
-              ball.vel = { x: spreadX * linearBoost, y: 0.9 + launchPower * 2.2 };
+              const speed = (0.65 + launchPower * 1.15) * PHYSICS_SCALE;
+              const tangent = launchArcExitTangent();
+              const spread = (Math.random() - 0.5) * 0.35;
+              ball.vel = {
+                x: (tangent.x + spread) * speed,
+                y: (tangent.y + 0.25 + launchPower * 0.35) * speed,
+              };
             }
           }
         } else {
@@ -1156,27 +684,15 @@ export default function PinballGame() {
           ball.pos.x += ball.vel.x;
           ball.pos.y += ball.vel.y;
           collideWalls();
-          for (const s of layoutRef.current.rails) collideSegment(s);
-          for (const tri of layoutRef.current.cornerTriangles) {
-            let hitTri = false;
-            for (const edge of triangleEdges(tri)) {
-              if (collideSegment(edge)) hitTri = true;
-            }
-            if (hitTri) {
-              addRoundPoints(30, "up");
-            }
-          }
+          collideImageObstacles();
           collideSegment(launchDivider);
-          // Top arc is decorative only; no collision to prevent launch jams.
-          for (const b of layoutRef.current.bumpers) collideBumper(b);
-          for (const obs of layoutRef.current.randomObstacles) collideRandomObstacle(obs);
           collideSeparators();
           const speed = Math.hypot(ball.vel.x, ball.vel.y);
-          if (speed < 0.14 && ball.pos.y < CHANNEL_TOP + 10) {
+          if (speed < 0.14 * PHYSICS_SCALE && ball.pos.y < CHANNEL_TOP + 10) {
             stuckFramesRef.current += 1;
             if (stuckFramesRef.current > 22) {
-              ball.vel.y += 0.65;
-              ball.vel.x += ball.pos.x < CENTER_X ? 0.25 : -0.25;
+              ball.vel.y += 0.65 * PHYSICS_SCALE;
+              ball.vel.x += (ball.pos.x < CENTER_X ? 0.25 : -0.25) * PHYSICS_SCALE;
               flashesRef.current.push({
                 x: ball.pos.x,
                 y: ball.pos.y,
@@ -1189,7 +705,7 @@ export default function PinballGame() {
           } else {
             stuckFramesRef.current = 0;
           }
-          if (ball.pos.y > CHANNEL_TOP + CHANNEL_HEIGHT * 0.72 && ball.vel.y > 0) resolveChannel();
+          if (ball.pos.y + ball.radius >= CHANNEL_BOTTOM - 4 && ball.vel.y > 0) resolveChannel();
         }
       }
 
@@ -1198,6 +714,23 @@ export default function PinballGame() {
     };
 
     const onKeyDown = (e: KeyboardEvent) => {
+      if (editModeRef.current && (e.code === "Delete" || e.code === "Backspace") && selectedObstacleRef.current) {
+        e.preventDefault();
+        const key = selectedObstacleRef.current;
+        if (key.startsWith("obs:")) {
+          const idx = Number(key.split(":")[1]);
+          setLayout((prev) => {
+            const next: LayoutData = {
+              version: prev.version,
+              obstacles: prev.obstacles.filter((_, i) => i !== idx),
+            };
+            layoutRef.current = next;
+            return next;
+          });
+          setSelectedObstacle("");
+          setStatus("已刪除障礙物");
+        }
+      }
       if (editMode && e.code === "Space") {
         e.preventDefault();
         return;
@@ -1217,7 +750,6 @@ export default function PinballGame() {
         comboRef.current = 1;
         lastHitRef.current = 0;
         runDoneRef.current = false;
-        spawnDropRef.current = false;
         if (settleTimeoutRef.current) {
           window.clearTimeout(settleTimeoutRef.current);
           settleTimeoutRef.current = null;
@@ -1227,10 +759,10 @@ export default function PinballGame() {
         chargeRatioRef.current = 0;
         ballsRef.current = 5;
         stallRewardGrantedRef.current = false;
+        settledBallsRef.current = [];
         setScore(0);
         setDisplayScore(0);
         setBalls(5);
-        setCombo(1);
         setChargeRatio(0);
         setChargeTier("low");
         setRewardText("");
@@ -1262,63 +794,115 @@ export default function PinballGame() {
     };
   }, [initialBall, editMode]);
 
-  const pickObstacleAt = (x: number, y: number): string => {
-    const l = layoutRef.current;
-    for (let i = l.bumpers.length - 1; i >= 0; i -= 1) {
-      const b = l.bumpers[i];
-      if (Math.hypot(x - b.x, y - b.y) <= b.r + 8) return `bumper:${i}`;
-    }
-    for (let i = l.randomObstacles.length - 1; i >= 0; i -= 1) {
-      const o = l.randomObstacles[i];
-      if (o.kind === "circle" && Math.hypot(x - o.x, y - o.y) <= o.r + 8) return `obs:${i}`;
-      if (o.kind === "rect" && x >= o.x - o.w / 2 && x <= o.x + o.w / 2 && y >= o.y - o.h / 2 && y <= o.y + o.h / 2) return `obs:${i}`;
-      if (o.kind === "bar") {
-        const mx = (o.segment.a.x + o.segment.b.x) / 2;
-        const my = (o.segment.a.y + o.segment.b.y) / 2;
-        if (Math.hypot(x - mx, y - my) < 16) return `obs:${i}`;
-      }
-    }
-    for (let i = l.rails.length - 1; i >= 0; i -= 1) {
-      const s = l.rails[i];
-      const mx = (s.a.x + s.b.x) / 2;
-      const my = (s.a.y + s.b.y) / 2;
-      if (Math.hypot(x - mx, y - my) < 16) return `rail:${i}`;
-    }
-    for (let i = l.cornerTriangles.length - 1; i >= 0; i -= 1) {
-      const t = l.cornerTriangles[i];
-      const cx = (t.a.x + t.b.x + t.c.x) / 3;
-      const cy = (t.a.y + t.b.y + t.c.y) / 3;
-      if (Math.hypot(x - cx, y - cy) < 22) return `tri:${i}`;
-    }
-    return "";
-  };
+  const pickObstacleAt = (x: number, y: number): string =>
+    pickObstacleAtPoint(x, y, layoutRef.current, assetsRef.current);
 
   const getCanvasPoint = (e: MouseEvent<HTMLCanvasElement> | WheelEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
     const rect = canvas.getBoundingClientRect();
-    const sx = canvas.width / rect.width;
-    const sy = canvas.height / rect.height;
-    return { x: (e.clientX - rect.left) * sx, y: (e.clientY - rect.top) * sy };
+    return {
+      x: ((e.clientX - rect.left) / rect.width) * BOARD_WIDTH,
+      y: ((e.clientY - rect.top) / rect.height) * BOARD_HEIGHT,
+    };
   };
 
   const onCanvasMouseDown = (e: MouseEvent<HTMLCanvasElement>) => {
     if (!editMode) return;
+    e.preventDefault();
     const p = getCanvasPoint(e);
+    const layout = layoutRef.current;
+    const assets = assetsRef.current;
+
+    const handlePick = pickObstacleHandle(p.x, p.y, layout, assets, selectedObstacleRef.current);
+    if (handlePick) {
+      setSelectedObstacle(handlePick.key);
+      const { key, hit, frame } = handlePick;
+      const obs = layout.obstacles[Number(key.split(":")[1])];
+      if (hit.kind === "rotate") {
+        dragRef.current = {
+          mode: "rotate",
+          key,
+          startAngle: Math.atan2(p.y - frame.cy, p.x - frame.cx),
+          startRotation: obs.rotation,
+          cx: frame.cx,
+          cy: frame.cy,
+        };
+        return;
+      }
+      if (hit.kind === "corner" && hit.corner !== undefined) {
+        dragRef.current = {
+          mode: "scale",
+          key,
+          corner: hit.corner,
+          startPointer: p,
+          startScale: obs.scale,
+        };
+        return;
+      }
+    }
+
     const key = pickObstacleAt(p.x, p.y);
-    if (!key) return;
+    if (!key) {
+      setSelectedObstacle("");
+      return;
+    }
     setSelectedObstacle(key);
-    dragRef.current = { key, lastX: p.x, lastY: p.y };
+    dragRef.current = { mode: "move", key, lastX: p.x, lastY: p.y };
   };
 
   const onCanvasMouseMove = (e: MouseEvent<HTMLCanvasElement>) => {
     if (!editMode || !dragRef.current) return;
     const p = getCanvasPoint(e);
-    const dx = p.x - dragRef.current.lastX;
-    const dy = p.y - dragRef.current.lastY;
-    dragRef.current.lastX = p.x;
-    dragRef.current.lastY = p.y;
-    updateLayoutByKey(dragRef.current.key, dx, dy);
+    const drag = dragRef.current;
+    const assets = assetsRef.current;
+    if (!assets) return;
+
+    if (drag.mode === "move") {
+      const dx = p.x - drag.lastX;
+      const dy = p.y - drag.lastY;
+      dragRef.current = { ...drag, lastX: p.x, lastY: p.y };
+      updateLayoutByKey(drag.key, dx, dy);
+      return;
+    }
+
+    const i = Number(drag.key.split(":")[1]);
+
+    if (drag.mode === "scale") {
+      setLayout((prev) => {
+        const next: LayoutData = structuredClone(prev);
+        const obs = next.obstacles[i];
+        const body = assets.bodies[obs.kind];
+        next.obstacles[i] = scaleObstacleByCorner(
+          obs,
+          body.nativeW,
+          body.nativeH,
+          drag.corner,
+          p,
+          drag.startPointer,
+          drag.startScale,
+        );
+        layoutRef.current = next;
+        return next;
+      });
+      return;
+    }
+
+    if (drag.mode === "rotate") {
+      setLayout((prev) => {
+        const next: LayoutData = structuredClone(prev);
+        next.obstacles[i] = rotateObstacleByPointer(
+          next.obstacles[i],
+          p,
+          drag.startAngle,
+          drag.startRotation,
+          drag.cx,
+          drag.cy,
+        );
+        layoutRef.current = next;
+        return next;
+      });
+    }
   };
 
   const onCanvasMouseUp = () => {
@@ -1349,183 +933,126 @@ export default function PinballGame() {
   };
 
   return (
-    <main className="min-h-full w-full overflow-auto game-stage-shell">
-      <div className="mx-auto flex min-h-full max-w-5xl flex-col gap-3 p-4">
-        <GameHudBar
-          score={displayScore}
-          resource={balls}
-          resourceLabel="彈珠"
-          scoreFlash={scoreFlash}
-        />
-
-        <div className="flex flex-wrap items-center justify-center gap-2 text-xs game-message">
-          <span className="game-status-chip">連擊：x{combo}</span>
-          <button
-            type="button"
-            onClick={() => setEditMode((v) => !v)}
-            className={`game-action-btn text-xs ${
-              editMode ? "border-amber-500" : ""
-            }`}
-          >
-            {editMode ? "編輯中" : "編輯模式"}
-          </button>
-          <button
-            type="button"
-            onClick={saveLayout}
-            disabled={savingLayout}
-            className="game-action-btn text-xs disabled:opacity-50"
-          >
-            {savingLayout ? "儲存中" : "儲存布局"}
-          </button>
-          <span className="w-full text-center sm:w-auto">{status}</span>
-        </div>
-        {editMode && selectedObstacle.startsWith("tri:") ? (
-          <div className="grid grid-cols-6 gap-2 text-xs">
-            <button
-              type="button"
-              onClick={() => rotateTriangleByKey(selectedObstacle, -8)}
-              className="game-action-btn text-xs"
-            >
-              三角形左轉
-            </button>
-            <button
-              type="button"
-              onClick={() => rotateTriangleByKey(selectedObstacle, 8)}
-              className="game-action-btn text-xs"
-            >
-              三角形右轉
-            </button>
-            <div className="col-span-2 flex items-center gap-2 game-overlay-panel px-2 py-2">
-              <input
-                value={triangleRotateInput}
-                onChange={(e) => setTriangleRotateInput(e.target.value)}
-                className="w-14 border border-ink/30 bg-white/40 px-2 py-1 text-center text-xs text-ink"
-                inputMode="numeric"
-              />
-              <button
-                type="button"
-                onClick={() => {
-                  const deg = Number(triangleRotateInput);
-                  if (!Number.isFinite(deg)) return;
-                  rotateTriangleByKey(selectedObstacle, deg);
-                }}
-                className="game-action-btn text-xs"
-              >
-                角度套用
-              </button>
-            </div>
-            <button
-              type="button"
-              onClick={() => stretchTriangleByKey(selectedObstacle, 1.12, 1)}
-              className="game-action-btn text-xs"
-            >
-              橫向拉伸
-            </button>
-            <button
-              type="button"
-              onClick={() => stretchTriangleByKey(selectedObstacle, 0.9, 1)}
-              className="game-action-btn text-xs"
-            >
-              橫向縮回
-            </button>
-            <button
-              type="button"
-              onClick={() => stretchTriangleByKey(selectedObstacle, 1, 1.12)}
-              className="game-action-btn text-xs"
-            >
-              縱向拉伸
-            </button>
-            <button
-              type="button"
-              onClick={() => stretchTriangleByKey(selectedObstacle, 1, 0.9)}
-              className="game-action-btn text-xs"
-            >
-              縱向縮回
-            </button>
-          </div>
-        ) : null}
-
-        <div className="flex min-h-0 flex-1 items-center justify-center gap-5">
-          <section className="game-playfield-frame">
-            <canvas
-              ref={canvasRef}
-              width={BOARD_WIDTH}
-              height={BOARD_HEIGHT}
-              className="border border-ink/40"
-              onMouseDown={onCanvasMouseDown}
-              onMouseMove={onCanvasMouseMove}
-              onMouseUp={onCanvasMouseUp}
-              onMouseLeave={onCanvasMouseUp}
-              onWheel={onCanvasWheel}
-            />
-          </section>
-
-          <aside className="game-charge-panel">
-            <div className="game-charge-panel__label mb-2">力度(3s)</div>
-            <div className="game-charge-tier">
-              {chargeTier === "low"
-                ? "低段"
-                : chargeTier === "mid"
-                  ? "中段"
-                  : chargeRatio >= 0.999
-                    ? "高段 x1.2"
-                    : "高段"}
-            </div>
-            <div className="flex h-[210px] flex-col-reverse gap-[2px]">
-              {Array.from({ length: 20 }).map((_, i) => {
-                const lit = chargeRatio >= (i + 1) / 20;
-                const colorClass =
-                  i < 7
-                    ? "bg-cyan-300 shadow-[0_0_10px_rgba(80,230,255,0.95)]"
-                    : i < 14
-                      ? "bg-yellow-300 shadow-[0_0_10px_rgba(255,240,120,0.95)]"
-                      : "bg-red-400 shadow-[0_0_10px_rgba(255,100,100,0.95)]";
-                return (
-                  <div
-                    key={i}
-                    className={`h-full rounded-[2px] ${lit ? colorClass : "bg-neutral-200"}`}
-                  />
-                );
-              })}
-            </div>
-            <div className="game-charge-panel__hint mt-2">低(易滑回) / 中 / 高(滿蓄力x1.2)</div>
-          </aside>
-        </div>
-
-        {rewardText ? (
-          <div
-            className={`pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-black/50 transition-opacity duration-500 ${
-              rewardVisible ? "opacity-100" : "opacity-0"
-            }`}
-          >
-            <div className="game-reward-overlay">{rewardText}</div>
-          </div>
-        ) : null}
-
-        <div className="game-legend-grid">
-          <div className="game-legend-cell">
-            <span className="inline-block h-3 w-3 rounded-full border border-amber-200 bg-red-600" />
-            <span className="mx-1 inline-block h-3 w-3 rounded-full border border-amber-200 bg-red-600" />
-          </div>
-          <div className="game-legend-cell">
-            <span className="inline-block h-3 w-6 rounded-sm border border-amber-200 bg-red-700" />
-          </div>
-          <div className="game-legend-cell">
-            <span className="inline-block h-0 w-0 border-x-[8px] border-b-[12px] border-x-transparent border-b-amber-300" />
-          </div>
-          <div className="game-legend-cell">
-            <span className="inline-block h-4 w-4 rotate-45 border border-amber-200 bg-red-800" />
-          </div>
-          <div className="game-legend-cell">
-            <span className="inline-block h-3 w-3 rounded-full border border-amber-200 bg-zinc-600" />
-            <span className="mx-1 inline-block h-[1px] w-4 bg-amber-300/90" />
-          </div>
-          <div className="game-legend-cell">
-            <span className="inline-block h-[2px] w-5 bg-amber-300/95" />
-            <span className="ml-1 inline-block h-5 w-[2px] bg-amber-300/95" />
-          </div>
+    <main className="flex h-full min-h-0 w-full flex-col overflow-hidden">
+      <div className="pinball-play-row">
+        <div ref={stageRef} className="pinball-stage relative min-h-0 min-w-0 flex-1">
+          <GameHudBar
+            score={displayScore}
+            resource={balls}
+            resourceLabel="彈珠"
+            scoreFlash={scoreFlash}
+          />
+          <canvas
+            ref={canvasRef}
+            width={BOARD_WIDTH}
+            height={BOARD_HEIGHT}
+            className={`block h-full w-full touch-none ${editMode ? "cursor-crosshair" : ""}`}
+            onMouseDown={onCanvasMouseDown}
+            onMouseMove={onCanvasMouseMove}
+            onMouseUp={onCanvasMouseUp}
+            onMouseLeave={onCanvasMouseUp}
+            onWheel={onCanvasWheel}
+          />
         </div>
       </div>
+
+      <div className="flex shrink-0 flex-wrap items-center justify-center gap-2 px-3 pb-2 text-xs game-message">
+        <button
+          type="button"
+          onClick={() => setEditMode((v) => !v)}
+          className={`game-action-btn text-xs ${editMode ? "border-amber-500" : ""}`}
+        >
+          {editMode ? "編輯中" : "編輯模式"}
+        </button>
+        <button
+          type="button"
+          onClick={saveLayout}
+          disabled={savingLayout}
+          className="game-action-btn text-xs disabled:opacity-50"
+        >
+          {savingLayout ? "儲存中" : "儲存布局"}
+        </button>
+        <span>{status}</span>
+      </div>
+
+      {editMode && selectedObstacle ? (
+        <div className="shrink-0 space-y-2 px-3 pb-2 text-xs">
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            <button
+              type="button"
+              onClick={() => scaleLayoutByKey(selectedObstacle, 1.1)}
+              className="game-action-btn text-xs"
+            >
+              放大
+            </button>
+            <button
+              type="button"
+              onClick={() => scaleLayoutByKey(selectedObstacle, 0.9)}
+              className="game-action-btn text-xs"
+            >
+              縮小
+            </button>
+          </div>
+
+          {selectedObstacle.startsWith("obs:") ? (
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              <button
+              type="button"
+              onClick={() => deleteObstacleByKey(selectedObstacle)}
+              className="game-action-btn text-xs border-red-400"
+            >
+              刪除
+            </button>
+            <span className="text-ink/70">
+                {layout.obstacles[Number(selectedObstacle.split(":")[1])]?.kind ?? ""} · 拖角點縮放 · ↻ 旋轉
+              </span>
+              <button
+                type="button"
+                onClick={() => rotateObstacleByKey(selectedObstacle, -15)}
+                className="game-action-btn text-xs"
+              >
+                左轉 15°
+              </button>
+              <button
+                type="button"
+                onClick={() => rotateObstacleByKey(selectedObstacle, 15)}
+                className="game-action-btn text-xs"
+              >
+                右轉 15°
+              </button>
+              <div className="flex items-center gap-2 game-overlay-panel px-2 py-2">
+                <input
+                  value={rotateInput}
+                  onChange={(e) => setRotateInput(e.target.value)}
+                  className="w-14 border border-ink/30 bg-white/40 px-2 py-1 text-center text-xs text-ink"
+                  inputMode="numeric"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    const deg = Number(rotateInput);
+                    if (!Number.isFinite(deg)) return;
+                    rotateObstacleByKey(selectedObstacle, deg);
+                  }}
+                  className="game-action-btn text-xs"
+                >
+                  角度套用
+                </button>
+              </div>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
+      {rewardText ? (
+        <div
+          className={`pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-black/50 transition-opacity duration-500 ${
+            rewardVisible ? "opacity-100" : "opacity-0"
+          }`}
+        >
+          <div className="game-reward-overlay">{rewardText}</div>
+        </div>
+      ) : null}
     </main>
   );
 }

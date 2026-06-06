@@ -27,19 +27,21 @@ export default function GameHudBar({
         : "";
 
   return (
-    <div className={`game-hud-bar ${className}`.trim()} aria-label="遊戲資訊">
-      <div className={`game-hud-stat ${scoreClass}`.trim()}>
-        <span className="game-hud-stat__label">得分</span>
-        <span className="game-hud-stat__value tabular-nums">{score}</span>
-      </div>
+    <div className="game-hud-overlay">
+      <div className={`game-hud-bar ${className}`.trim()} aria-label="遊戲資訊">
+        <div className={`game-hud-stat game-hud-stat--score ${scoreClass}`.trim()}>
+          <span className="game-hud-stat__label">得分</span>
+          <span className="game-hud-stat__value tabular-nums">{score}</span>
+        </div>
 
-      {extra}
+        {extra}
 
-      <div className="game-hud-stat">
-        <span className="game-hud-stat__label">{resourceLabel}</span>
-        <span className="game-hud-stat__value tabular-nums">
-          {resourceMax != null ? `${resource} / ${resourceMax}` : resource}
-        </span>
+        <div className="game-hud-stat game-hud-stat--resource">
+          <span className="game-hud-stat__label">{resourceLabel}</span>
+          <span className="game-hud-stat__value tabular-nums">
+            {resourceMax != null ? `${resource} / ${resourceMax}` : resource}
+          </span>
+        </div>
       </div>
     </div>
   );

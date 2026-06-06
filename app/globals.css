@@ -4,6 +4,7 @@
   --background: #0a0a0a;
   --foreground: #e8e4dc;
   --paper: #d4d0c8;
+  --game-score-board: url("/narrative/score_board.png");
   --ink: #111111;
   --accent-red: #cc0000;
 }
@@ -200,6 +201,19 @@ body {
 }
 
 /* 四款小遊戲統一 HUD */
+.game-hud-overlay {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.75rem;
+  left: 0.75rem;
+  z-index: 20;
+  pointer-events: none;
+}
+
+.game-hud-overlay .game-hud-bar {
+  pointer-events: auto;
+}
+
 .game-hud-bar {
   display: flex;
   align-items: stretch;
@@ -252,6 +266,55 @@ body {
   box-shadow:
     inset 0 0 0 1px rgba(255, 255, 255, 0.5),
     2px 2px 0 0 var(--accent-red);
+}
+
+/* 得分／道具區：僅 score_board.png，高度略增 20% */
+.game-hud-stat.game-hud-stat--score,
+.game-hud-stat.game-hud-stat--resource {
+  background-color: transparent;
+  background-image: var(--game-score-board);
+  background-repeat: no-repeat;
+  background-size: 100% 120%;
+  background-position: center;
+  border: none;
+  box-shadow: none;
+  color: #e8dcc8;
+  padding-top: 0.6rem;
+  padding-bottom: 0.6rem;
+}
+
+.game-hud-stat.game-hud-stat--score .game-hud-stat__label,
+.game-hud-stat.game-hud-stat--resource .game-hud-stat__label {
+  color: rgba(232, 220, 196, 0.78);
+}
+
+.game-hud-stat.game-hud-stat--score .game-hud-stat__value,
+.game-hud-stat.game-hud-stat--resource .game-hud-stat__value {
+  color: #f5eed8;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.65);
+}
+
+.game-hud-stat.game-hud-stat--score.game-hud-stat--flash-up {
+  border: none;
+  filter: brightness(1.12) saturate(1.1);
+  box-shadow: 0 0 14px rgba(255, 196, 80, 0.45);
+}
+
+.game-hud-stat.game-hud-stat--score.game-hud-stat--flash-down {
+  border: none;
+  filter: brightness(0.95) saturate(1.15);
+  box-shadow: 0 0 14px rgba(255, 90, 90, 0.4);
+}
+
+.game-score-board-bg {
+  background-color: transparent;
+  background-image: var(--game-score-board);
+  background-repeat: no-repeat;
+  background-size: 100% 120%;
+  background-position: center;
+  border: none;
+  box-shadow: none;
+  color: #e8dcc8;
 }
 
 .game-hud-stat__label {
@@ -640,6 +703,111 @@ body {
   background: rgba(255, 255, 255, 0.35);
 }
 
+/* 彈珠台滿版背景比例 2750×1536 */
+.pinball-play-row {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0.75rem 0.5rem;
+}
+
+.pinball-stage {
+  aspect-ratio: 2750 / 1536;
+  flex: 1 1 auto;
+  min-width: 0;
+  max-height: calc(100dvh - 6rem);
+  width: 100%;
+}
+
+/* 套圈圈：全螢幕滿版，無外殼、無捲動 */
+.ringtoss-fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  width: 100vw;
+  height: 100dvh;
+  overflow: hidden;
+  background: #0a0806;
+}
+
+.ringtoss-stage {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.ringtoss-stage__canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  cursor: pointer;
+}
+
+.ringtoss-back-link {
+  position: absolute;
+  top: 0.75rem;
+  left: 0.75rem;
+  z-index: 25;
+  font-size: 0.75rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(255, 235, 200, 0.82);
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.85);
+  transition: color 0.15s ease;
+}
+
+.ringtoss-back-link:hover {
+  color: rgba(255, 245, 220, 1);
+}
+
+.ringtoss-message {
+  position: absolute;
+  top: 4.25rem;
+  right: 0.75rem;
+  left: 0.75rem;
+  z-index: 15;
+  pointer-events: none;
+  text-align: center;
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  color: rgba(255, 235, 200, 0.88);
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.85);
+}
+
+.ringtoss-action-btn {
+  position: absolute;
+  bottom: 1.25rem;
+  left: 50%;
+  z-index: 30;
+  transform: translateX(-50%);
+  padding: 0.5rem 1.5rem;
+  font-size: 0.9375rem;
+  letter-spacing: 0.08em;
+  color: #f5ead8;
+  background: rgba(24, 18, 14, 0.82);
+  border: 2px solid rgba(255, 220, 160, 0.55);
+  box-shadow:
+    0 10px 28px rgba(0, 0, 0, 0.55),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(4px);
+  transition: background 0.15s ease, transform 0.15s ease;
+}
+
+.ringtoss-action-btn:not(:disabled):hover {
+  background: rgba(36, 28, 22, 0.92);
+  transform: translateX(-50%) translateY(-2px);
+}
+
+.ringtoss-action-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .game-status-chip {
   padding: 0.25rem 0.75rem;
   font-size: 0.75rem;
@@ -690,10 +858,15 @@ body {
   font-size: 1.875rem;
   font-weight: 700;
   letter-spacing: 0.12em;
-  color: var(--foreground);
-  background: rgba(10, 10, 10, 0.85);
-  border: 2px solid var(--foreground);
-  box-shadow: 2px 2px 0 0 var(--ink);
+  color: #f5eed8;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.65);
+  background-color: transparent;
+  background-image: var(--game-score-board);
+  background-repeat: no-repeat;
+  background-size: 100% 120%;
+  background-position: center;
+  border: none;
+  box-shadow: none;
 }
 
 /* =============================================================================

@@ -28,6 +28,10 @@ import {
   stallDimensions,
   STALL_FLOOR_RATIO,
 } from "@/lib/market/hubLayout";
+import {
+  readHubPlayerPosition,
+  saveHubPlayerPosition,
+} from "@/lib/market/hubPlayerPosition";
 import type { StallId } from "@/lib/narrative/types";
 import { useStoryKeyAdvance } from "@/lib/useStoryKeyAdvance";
 import { useNarrativeStore } from "@/store/narrativeStore";
@@ -77,6 +81,12 @@ export default function NightMarketHub() {
     () => playerSpawnX(metrics),
     [metrics],
   );
+
+  const resolveSpawnX = useCallback(() => {
+    const restored = readHubPlayerPosition(metrics.worldWidth);
+    if (restored === null) return initialSpawnX;
+    return clamp(restored, metrics.playerMinX, metrics.playerMaxX);
+  }, [initialSpawnX, metrics.playerMinX, metrics.playerMaxX, metrics.worldWidth]);
 
   const [playerX, setPlayerX] = useState(initialSpawnX);
   const [opening, setOpening] = useState(false);
@@ -128,9 +138,14 @@ export default function NightMarketHub() {
 
   useEffect(() => {
     if (spawnSyncedRef.current) return;
-    setPlayerX(initialSpawnX);
+    setPlayerX(resolveSpawnX());
     spawnSyncedRef.current = true;
-  }, [initialSpawnX]);
+  }, [resolveSpawnX]);
+
+  useEffect(() => {
+    if (!spawnSyncedRef.current) return;
+    saveHubPlayerPosition(playerX, metrics.worldWidth);
+  }, [playerX, metrics.worldWidth]);
 
   useEffect(() => {
     hydrate();
@@ -224,10 +239,11 @@ export default function NightMarketHub() {
     if (!hydrated) return;
     if (movementLocked) return;
     if (!id) return;
+    if (hasVisitedStall(id)) return;
     if (stallTriggeredRef.current.has(id)) return;
     stallTriggeredRef.current.add(id);
     setActiveStall(id);
-  }, [playerX, movementLocked, nearStall, hydrated]);
+  }, [playerX, movementLocked, nearStall, hydrated, hasVisitedStall]);
 
   const openingLines = narrativeDefault.marketOpening;
   const openingLine = openingLines[openingIndex];

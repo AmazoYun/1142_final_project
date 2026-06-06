@@ -1,48 +1,41 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import GameHudBar from "@/components/game/GameHudBar";
 import { awardStallReward } from "@/lib/collectibles/awardStallReward";
-//畫面各種size//
-const W = 720;
-const H = 640;
+import { loadRingTossAssets, type LoadedRingTossAssets } from "@/lib/ringtoss/assets";
+import {
+  cycleLengthForAim,
+  cycleValueForAim,
+  hasActiveBottle,
+} from "@/lib/ringtoss/aimCycle";
+import {
+  BOARD_HEIGHT,
+  BOARD_WIDTH,
+  LAUNCH_POINT,
+  toViewport,
+  type CellTarget,
+  type ShelfRow,
+} from "@/lib/ringtoss/boardLayout";
+import { buildBottleTargets, readBackgroundImageData } from "@/lib/ringtoss/bottleLayout";
+import {
+  drawAimCrosshair,
+  drawBottleSprite,
+  drawHitLabel,
+  drawLandedRingSprite,
+  drawRingSprite,
+  drawRingTossBackground,
+  drawTargetHighlights,
+  ringLandAt,
+} from "@/lib/ringtoss/drawSprites";
+
+const W = BOARD_WIDTH;
+const H = BOARD_HEIGHT;
 const RINGS_PER_ROUND = 5;
 const CYCLE_MS = 260;
 const FLY_MS = 650;
-const GRID_COLS = 7;
-const GRID_ROWS = 5;
-
-//cycle 部分//
-const VALUE_CYCLE_X = [1, 2, 3, 4, 5, 6, 7, 6, 5, 4, 3, 2, 1] as const;
-const VALUE_CYCLE_Y = [1, 2, 3, 4, 5, 4, 3, 2, 1] as const;
-
-const GRID = {
-  topY: 72,
-  bottomY: 300,
-  leftBottom: 248,
-  rightBottom: 472,
-  leftTop: 128,
-  rightTop: 592,
-  ctrlX: W / 2,
-  ctrlY: 468,
-};
-
-type CellTarget = { gx: number; gy: number; points: number; hit: boolean };
-
-/** All bottle positions (3-2-3 on 7 columns); every pillar can be rung for points */
-const TARGET_CELLS: CellTarget[] = [
-  { gx: 1, gy: 4, points: 15, hit: false },
-  { gx: 4, gy: 4, points: 20, hit: false },
-  { gx: 5, gy: 4, points: 30, hit: false },
-  { gx: 7, gy: 4, points: 15, hit: false },
-  { gx: 2, gy: 3, points: 10, hit: false },
-  { gx: 6, gy: 3, points: 15, hit: false },
-  { gx: 1, gy: 2, points: 15, hit: false },
-  { gx: 4, gy: 2, points: 20, hit: false },
-  { gx: 7, gy: 2, points: 25, hit: false },
-];
-
-const SHELF_ROWS = [4, 3, 2] as const;
+const RING_RADIUS = 20;
 
 type Ring = {
   x: number;
@@ -56,6 +49,8 @@ type Ring = {
   flyStart: number;
 };
 
+type LandedRing = { gx: number; gy: number; x: number; y: number };
+
 type AimPhase = "x" | "y" | "flying";
 
 type AimState = {
@@ -65,195 +60,115 @@ type AimState = {
   lockedY: number | null;
 };
 
-function cycleValue(index: number, axis: "x" | "y"): number {
-  const cycle = axis === "x" ? VALUE_CYCLE_X : VALUE_CYCLE_Y;
-  return cycle[index % cycle.length];
-}
-
 function initialAim(): AimState {
   return { phase: "x", cycleIndex: 0, lockedX: null, lockedY: null };
 }
 
-function resetTargets(): CellTarget[] {
-  return TARGET_CELLS.map((t) => ({ ...t, hit: false }));
-}
-
-const RING_LAND_Y_OFFSET = 12;
-
-function gridToCanvas(gx: number, gy: number): { x: number; y: number } {
-  const tX = (gx - 1) / (GRID_COLS - 1);
-  const tY = (gy - 1) / (GRID_ROWS - 1);
-  const y = GRID.bottomY - tY * (GRID.bottomY - GRID.topY);
-  const left = GRID.leftBottom + tY * (GRID.leftTop - GRID.leftBottom);
-  const right = GRID.rightBottom + tY * (GRID.rightTop - GRID.rightBottom);
-  return { x: left + tX * (right - left), y };
-}
-
-function ringLandAt(gx: number, gy: number): { x: number; y: number } {
-  const { x, y } = gridToCanvas(gx, gy);
-  return { x, y: y - RING_LAND_Y_OFFSET };
+function resetTargets(cells: CellTarget[]): CellTarget[] {
+  return cells.map((t) => ({ ...t, hit: false }));
 }
 
 function createRing(): Ring {
-  const start = { x: GRID.ctrlX, y: GRID.ctrlY };
   return {
-    ...start,
-    r: 18,
+    x: LAUNCH_POINT.x,
+    y: LAUNCH_POINT.y,
+    r: RING_RADIUS,
     flying: false,
-    fromX: start.x,
-    fromY: start.y,
-    toX: start.x,
-    toY: start.y,
+    fromX: LAUNCH_POINT.x,
+    fromY: LAUNCH_POINT.y,
+    toX: LAUNCH_POINT.x,
+    toY: LAUNCH_POINT.y,
     flyStart: 0,
   };
 }
 
-function aimGridPosition(aim: AimState): { gx: number; gy: number } {
+function aimGridPosition(aim: AimState, targets: CellTarget[]): { gx: number; gy: number } {
   if (aim.phase === "x") {
-    return { gx: cycleValue(aim.cycleIndex, "x"), gy: 3 };
+    const gx = cycleValueForAim(targets, aim.cycleIndex, "x", null);
+    const target = targets.find((t) => !t.hit && t.gx === gx);
+    return { gx, gy: target?.gy ?? 1 };
   }
   if (aim.phase === "y" && aim.lockedX != null) {
-    return { gx: aim.lockedX, gy: cycleValue(aim.cycleIndex, "y") };
+    return {
+      gx: aim.lockedX,
+      gy: cycleValueForAim(targets, aim.cycleIndex, "y", aim.lockedX),
+    };
   }
   if (aim.lockedX != null && aim.lockedY != null) {
     return { gx: aim.lockedX, gy: aim.lockedY };
   }
-  return { gx: 4, gy: 3 };
+  return { gx: 4, gy: 1 };
 }
 
-function drawShelves(ctx: CanvasRenderingContext2D) {
-  ctx.lineCap = "round";
-  ctx.lineJoin = "round";
-
-  for (const gy of SHELF_ROWS) {
-    const left = gridToCanvas(1, gy);
-    const right = gridToCanvas(GRID_COLS, gy);
-    const depth = 10;
-
-    ctx.fillStyle = "#d4d4d4";
-    ctx.strokeStyle = "#a3a3a3";
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(left.x, left.y);
-    ctx.lineTo(right.x, right.y);
-    ctx.lineTo(right.x, right.y + depth);
-    ctx.lineTo(left.x, left.y + depth);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-  }
-}
-
-function drawBottle(
+function drawScene(
   ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  hit: boolean,
-) {
-  const h = 38;
-  const w = 13;
-  const baseY = y - 6;
-
-  ctx.save();
-  ctx.translate(x, baseY - h);
-
-  ctx.fillStyle = hit ? "#e5e5e5" : "#b8b8b8";
-  ctx.strokeStyle = hit ? "#a3a3a3" : "#737373";
-  ctx.lineWidth = 1.5;
-
-  ctx.beginPath();
-  ctx.rect(-w * 0.22, 0, w * 0.44, h * 0.22);
-  ctx.fill();
-  ctx.stroke();
-
-  ctx.beginPath();
-  ctx.moveTo(-w * 0.3, h * 0.22);
-  ctx.lineTo(-w * 0.52, h);
-  ctx.lineTo(w * 0.52, h);
-  ctx.lineTo(w * 0.3, h * 0.22);
-  ctx.closePath();
-  ctx.fill();
-  ctx.stroke();
-
-  if (hit) {
-    ctx.strokeStyle = "#525252";
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(-w * 0.35, h * 0.35);
-    ctx.lineTo(w * 0.35, h * 0.88);
-    ctx.moveTo(w * 0.35, h * 0.35);
-    ctx.lineTo(-w * 0.35, h * 0.88);
-    ctx.stroke();
-  }
-
-  ctx.restore();
-}
-
-function drawCrosshair(ctx: CanvasRenderingContext2D, x: number, y: number) {
-  const r = 22;
-  ctx.strokeStyle = "#404040";
-  ctx.lineWidth = 2;
-  ctx.lineCap = "round";
-
-  ctx.beginPath();
-  ctx.arc(x, y, r, 0, Math.PI * 2);
-  ctx.stroke();
-
-  ctx.beginPath();
-  ctx.moveTo(x - r - 6, y);
-  ctx.lineTo(x + r + 6, y);
-  ctx.moveTo(x, y - r - 6);
-  ctx.lineTo(x, y + r + 6);
-  ctx.stroke();
-}
-
-function drawGrid(
-  ctx: CanvasRenderingContext2D,
+  assets: LoadedRingTossAssets | null,
+  ring: Ring,
   aim: AimState,
   targets: CellTarget[],
+  landedRings: LandedRing[],
+  ringsLeft: number,
+  gameOver: boolean,
+  cw: number,
+  ch: number,
 ) {
-  const hlX = aim.phase === "x" ? cycleValue(aim.cycleIndex, "x") : aim.lockedX;
-  const hlY = aim.phase === "y" ? cycleValue(aim.cycleIndex, "y") : aim.lockedY;
+  drawRingTossBackground(ctx, assets, cw, ch);
 
-  drawShelves(ctx);
+  const hlX = aim.phase === "x" ? cycleValueForAim(targets, aim.cycleIndex, "x", null) : aim.lockedX;
+  const hlY =
+    aim.phase === "y"
+      ? cycleValueForAim(targets, aim.cycleIndex, "y", aim.lockedX)
+      : aim.lockedY;
+  const { gx: aimGx, gy: aimGy } = aimGridPosition(aim, targets);
+
+  drawTargetHighlights(
+    ctx,
+    assets,
+    targets,
+    hlX,
+    hlY,
+    aim.phase,
+    aim.lockedX,
+    aim.lockedY,
+    cw,
+    ch,
+  );
+
+  if (aim.phase !== "flying" && hasActiveBottle(targets, aimGx, aimGy)) {
+    drawAimCrosshair(ctx, assets, aimGx, aimGy, cw, ch);
+  }
+
+  for (const landed of landedRings) {
+    drawLandedRingSprite(ctx, assets, landed.gx, landed.gy as ShelfRow, RING_RADIUS, cw, ch);
+  }
+
+  for (const { gx, gy } of targets) {
+    drawBottleSprite(ctx, assets, gx, gy, cw, ch);
+  }
+
+  if (ring.flying) {
+    const t = Math.min(1, (performance.now() - ring.flyStart) / FLY_MS);
+    const ease = 1 - (1 - t) ** 2.2;
+    const rx = ring.fromX + (ring.toX - ring.fromX) * ease;
+    const ry = ring.fromY + (ring.toY - ring.fromY) * ease - Math.sin(t * Math.PI) * 55;
+    const ringScreen = toViewport(rx, ry, cw, ch);
+    drawRingSprite(ctx, assets, ringScreen.x, ringScreen.y, ring.r, cw, ch);
+  }
 
   for (const { gx, gy, hit } of targets) {
-    const { x, y } = gridToCanvas(gx, gy);
-    drawBottle(ctx, x, y, hit);
-  }
-
-  for (let gy = GRID_ROWS; gy >= 1; gy--) {
-    for (let gx = 1; gx <= GRID_COLS; gx++) {
-      const colHL = hlX === gx;
-      const rowHL = hlY === gy;
-      const isBottle = targets.some((t) => t.gx === gx && t.gy === gy);
-      const cellHL =
-        isBottle &&
-        ((aim.phase === "x" && colHL) ||
-          (aim.phase === "y" && aim.lockedX === gx && rowHL) ||
-          (aim.phase === "flying" && aim.lockedX === gx && aim.lockedY === gy));
-
-      if (!cellHL) continue;
-
-      const { x, y } = ringLandAt(gx, gy);
-      ctx.fillStyle = "rgba(163, 163, 163, 0.22)";
-      ctx.beginPath();
-      ctx.arc(x, y - 12, 30, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  }
-
-  const { gx: aimGx, gy: aimGy } = aimGridPosition(aim);
-  const aimPos = ringLandAt(aimGx, aimGy);
-  if (aim.phase !== "flying") {
-    drawCrosshair(ctx, aimPos.x, aimPos.y);
+    if (hit) drawHitLabel(ctx, gx, gy as ShelfRow, cw, ch);
   }
 }
 
 export default function RingTossGame() {
+  const stageRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const canvasSizeRef = useRef({ width: W, height: H });
+  const assetsRef = useRef<LoadedRingTossAssets | null>(null);
   const ringRef = useRef<Ring>(createRing());
-  const targetsRef = useRef<CellTarget[]>(resetTargets());
+  const landedRingsRef = useRef<LandedRing[]>([]);
+  const playableCellsRef = useRef<CellTarget[]>([]);
+  const targetsRef = useRef<CellTarget[]>([]);
   const aimRef = useRef<AimState>(initialAim());
   const animRef = useRef<number>(0);
   const lastCycleTickRef = useRef<number>(0);
@@ -273,34 +188,6 @@ export default function RingTossGame() {
     setAimUi({ ...aimRef.current });
   }, []);
 
-  const drawScene = useCallback(
-    (ctx: CanvasRenderingContext2D, ring: Ring, aim: AimState, targets: CellTarget[]) => {
-      ctx.fillStyle = "#ffffff";
-      ctx.fillRect(0, 0, W, H);
-
-      drawGrid(ctx, aim, targets);
-
-      let rx = ring.x;
-      let ry = ring.y;
-      if (ring.flying) {
-        const t = Math.min(1, (performance.now() - ring.flyStart) / FLY_MS);
-        const ease = 1 - (1 - t) ** 2.2;
-        rx = ring.fromX + (ring.toX - ring.fromX) * ease;
-        ry = ring.fromY + (ring.toY - ring.fromY) * ease - Math.sin(t * Math.PI) * 55;
-      }
-
-      ctx.strokeStyle = "#525252";
-      ctx.lineWidth = 4;
-      ctx.beginPath();
-      ctx.arc(rx, ry, ring.r, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.strokeStyle = "#737373";
-      ctx.lineWidth = 2;
-      ctx.stroke();
-    },
-    [],
-  );
-
   const resetAimForNextThrow = useCallback(() => {
     aimRef.current = initialAim();
     lastCycleTickRef.current = performance.now();
@@ -317,6 +204,8 @@ export default function RingTossGame() {
       let resultMessage: string;
       if (target) {
         target.hit = true;
+        const land = ringLandAt(gx, gy);
+        landedRingsRef.current.push({ gx, gy, x: land.x, y: land.y });
         setScore((s) => s + target.points);
         resultMessage = `\u547d\u4e2d ${gx}, ${gy}\uff01+${target.points} \u5206`;
       } else if (targets.some((t) => t.gx === gx && t.gy === gy && t.hit)) {
@@ -378,15 +267,21 @@ export default function RingTossGame() {
     if (gameOver || ringsLeft <= 0 || ringRef.current.flying) return;
 
     const aim = aimRef.current;
+    const targets = targetsRef.current;
     const axis = aim.phase === "x" ? "x" : "y";
-    const value = cycleValue(aim.cycleIndex, axis);
+    const value = cycleValueForAim(
+      targets,
+      aim.cycleIndex,
+      axis,
+      aim.lockedX,
+    );
 
     if (aim.phase === "x") {
       aim.lockedX = value;
       aim.phase = "y";
       aim.cycleIndex = 0;
       lastCycleTickRef.current = performance.now();
-      setMessage(`X=${value}\u3002\u7b2c\u4e8c\u6b65\uff1a\u9396\u5b9a Y\uff081\u21925\u21924\u21923\u21922\u21921\uff09`);
+      setMessage(`X=${value}\u3002\u7b2c\u4e8c\u6b65\uff1a\u9396\u5b9a Y\uff08\u50c5\u5269\u9918\u74f6\u5b50\uff09`);
       syncAimUi();
       return;
     }
@@ -406,6 +301,7 @@ export default function RingTossGame() {
 
       const aim = aimRef.current;
       const ring = ringRef.current;
+      const targets = targetsRef.current;
 
       if (
         !gameOver &&
@@ -414,19 +310,90 @@ export default function RingTossGame() {
         (aim.phase === "x" || aim.phase === "y")
       ) {
         if (now - lastCycleTickRef.current >= CYCLE_MS) {
-          const cycleLen =
-            aim.phase === "x" ? VALUE_CYCLE_X.length : VALUE_CYCLE_Y.length;
-          aim.cycleIndex = (aim.cycleIndex + 1) % cycleLen;
-          lastCycleTickRef.current = now;
-          syncAimUi();
+          const cycleLen = cycleLengthForAim(
+            targets,
+            aim.phase === "x" ? "x" : "y",
+            aim.lockedX,
+          );
+          if (cycleLen > 0) {
+            aim.cycleIndex = (aim.cycleIndex + 1) % cycleLen;
+            lastCycleTickRef.current = now;
+            syncAimUi();
+          }
         }
       }
 
-      drawScene(ctx, ring, aim, targetsRef.current);
+      const { width: cw, height: ch } = canvasSizeRef.current;
+      drawScene(
+        ctx,
+        assetsRef.current,
+        ring,
+        aim,
+        targets,
+        landedRingsRef.current,
+        ringsLeft,
+        gameOver,
+        cw,
+        ch,
+      );
       animRef.current = requestAnimationFrame(tick);
     },
-    [drawScene, gameOver, ringsLeft, syncAimUi],
+    [gameOver, ringsLeft, syncAimUi],
   );
+
+  useEffect(() => {
+    document.title = "套圈圈｜無人夜市";
+  }, []);
+
+  useEffect(() => {
+    const stage = stageRef.current;
+    const canvas = canvasRef.current;
+    if (!stage || !canvas) return;
+
+    const syncSize = () => {
+      const cw = stage.clientWidth;
+      const ch = stage.clientHeight;
+      if (cw <= 0 || ch <= 0) return;
+      canvas.width = cw;
+      canvas.height = ch;
+      canvasSizeRef.current = { width: cw, height: ch };
+    };
+
+    syncSize();
+    const observer = new ResizeObserver(syncSize);
+    observer.observe(stage);
+    window.addEventListener("resize", syncSize);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", syncSize);
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    loadRingTossAssets()
+      .then((assets) => {
+        if (cancelled) return;
+        assetsRef.current = assets;
+        const imageData = readBackgroundImageData(
+          assets.background,
+          BOARD_WIDTH,
+          BOARD_HEIGHT,
+        );
+        const playable = imageData
+          ? buildBottleTargets(imageData, BOARD_WIDTH, BOARD_HEIGHT)
+          : [];
+        playableCellsRef.current = playable;
+        targetsRef.current = resetTargets(playable);
+        landedRingsRef.current = [];
+      })
+      .catch(() => {
+        assetsRef.current = null;
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     lastCycleTickRef.current = performance.now();
@@ -448,22 +415,12 @@ export default function RingTossGame() {
     return () => window.removeEventListener("keydown", onKey);
   }, [confirmAim]);
 
-  const restart = () => {
-    targetsRef.current = resetTargets();
-    ringRef.current = createRing();
-    setScore(0);
-    setRingsLeft(RINGS_PER_ROUND);
-    setGameOver(false);
-    stallRewardGrantedRef.current = false;
-    setMessage("\u9396\u5b9a X\uff081\u21927\u2192\u2026\u21921\u5faa\u74b0\uff09");
-    throwIdRef.current += 1;
-    if (flyTimerRef.current) clearTimeout(flyTimerRef.current);
-    resetAimForNextThrow();
-  };
-
-  const cur = cycleValue(
+  const targets = targetsRef.current;
+  const cur = cycleValueForAim(
+    targets,
     aimUi.cycleIndex,
     aimUi.phase === "y" ? "y" : "x",
+    aimUi.lockedX,
   );
   const phaseHint =
     aimUi.phase === "x"
@@ -472,71 +429,40 @@ export default function RingTossGame() {
         ? `X=${aimUi.lockedX}\uff0cY \u5faa\u74b0\uff1a${cur}`
         : "";
 
+  const actionLabel =
+    aimUi.phase === "x"
+      ? "鎖定 X"
+      : aimUi.phase === "y"
+        ? "鎖定 Y 並投出"
+        : "...";
+
   return (
-    <div className="flex min-h-full w-full flex-col game-stage-shell">
-      <div className="shrink-0 px-3 py-2 sm:px-5">
-        <GameHudBar score={score} resource={ringsLeft} resourceLabel="套圈" />
+    <div ref={stageRef} className="ringtoss-stage">
+      <canvas
+        ref={canvasRef}
+        className="ringtoss-stage__canvas"
+        onPointerDown={() => confirmAim()}
+      />
+
+      <Link href="/market" className="ringtoss-back-link">
+        ← 返回夜市
+      </Link>
+
+      <GameHudBar score={score} resource={ringsLeft} resourceLabel="套圈" />
+
+      <div className="ringtoss-message">
+        <p>{message}</p>
+        {phaseHint ? <p className="mt-0.5 text-xs opacity-90">{phaseHint}</p> : null}
       </div>
 
-      <div className="flex min-h-0 flex-1 w-full">
-        <aside className="game-couplet-aside">
-          <p
-            className="text-lg tracking-widest text-foreground/60 sm:text-xl"
-            style={{ writingMode: "vertical-rl" }}
-          >
-            這是春聯
-          </p>
-        </aside>
-
-        <main className="flex min-h-full min-w-0 flex-1 flex-col">
-          <div className="flex flex-1 flex-col items-center justify-center gap-2 px-2 pb-4">
-            <p className="max-w-md text-center game-message px-2">
-              {message}
-            </p>
-            {phaseHint ? (
-              <p className="text-center game-message text-xs">{phaseHint}</p>
-            ) : null}
-
-            <div className="game-playfield-frame">
-              <canvas
-                ref={canvasRef}
-                width={W}
-                height={H}
-                className="max-h-[min(72vh,640px)] max-w-full cursor-pointer"
-                style={{ touchAction: "none" }}
-                onPointerDown={() => confirmAim()}
-              />
-            </div>
-
-            <div className="flex flex-wrap justify-center gap-2 pt-1">
-              <button
-                type="button"
-                onClick={confirmAim}
-                disabled={gameOver || ringsLeft <= 0 || aimUi.phase === "flying"}
-                className="game-action-btn disabled:opacity-40"
-              >
-                {aimUi.phase === "x"
-                  ? "鎖定 X"
-                  : aimUi.phase === "y"
-                    ? "鎖定 Y 並投出"
-                    : "..."}
-              </button>
-              <button type="button" onClick={restart} className="game-action-btn">
-                再玩一次
-              </button>
-            </div>
-          </div>
-        </main>
-
-        <aside className="game-couplet-aside">
-          <p
-            className="text-lg tracking-widest text-foreground/60 sm:text-xl"
-            style={{ writingMode: "vertical-rl" }}
-          >
-            這是春聯
-          </p>
-        </aside>
-      </div>
+      <button
+        type="button"
+        onClick={confirmAim}
+        disabled={gameOver || ringsLeft <= 0 || aimUi.phase === "flying"}
+        className="ringtoss-action-btn"
+      >
+        {actionLabel}
+      </button>
     </div>
   );
 }

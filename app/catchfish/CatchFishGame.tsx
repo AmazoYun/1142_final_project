@@ -538,21 +538,6 @@ export default function CatchFishGame() {
   return (
     <div className="min-h-full game-stage-shell">
       <div className="min-h-full flex flex-col p-4 md:p-6">
-        <div className="mb-3 shrink-0">
-          <GameHudBar
-            score={score}
-            resource={netsRemaining}
-            resourceLabel="撈網"
-            extra={
-              <GameHudExtraStat
-                label="本次"
-                value={lastCatchPoints > 0 ? lastCatchPoints : "—"}
-                accent
-              />
-            }
-          />
-        </div>
-
         <div className="flex flex-1 gap-4 md:gap-6 items-stretch min-h-0 justify-center">
           <aside className="game-couplet-aside hidden md:flex" aria-label="左側文字顯示區">
             <p
@@ -565,6 +550,18 @@ export default function CatchFishGame() {
 
           <section className="flex flex-col items-center flex-1 max-w-[min(72vh,640px)] min-w-0">
             <div className="relative w-full aspect-square max-h-[min(72vh,640px)] game-playfield-frame game-playfield-frame--round">
+              <GameHudBar
+                score={score}
+                resource={netsRemaining}
+                resourceLabel="撈網"
+                extra={
+                  <GameHudExtraStat
+                    label="本次"
+                    value={lastCatchPoints > 0 ? lastCatchPoints : "—"}
+                    accent
+                  />
+                }
+              />
               {/* 圓形裁切：CSS 圓形遮罩；魚的運動邊界由 arenaRef 數學圓控制 */}
               <div className="absolute inset-0 overflow-hidden bg-[#c8c4bc] shadow-inner">
                 <div ref={containerRef} className="w-full h-full">
@@ -616,11 +613,13 @@ export default function CatchFishGame() {
               */}
               {(!isPlaying || isGameOver) && (
                 <div className="absolute inset-0 rounded-full bg-black/25 flex items-center justify-center">
-                  <div className="game-overlay-panel px-6 py-5 max-w-[90%] text-center">
+                  <div
+                    className={`${isGameOver ? "game-score-board-bg" : "game-overlay-panel"} px-6 py-5 max-w-[90%] text-center`}
+                  >
                     {isGameOver ? (
                       <>
                         <p className="text-lg font-semibold mb-1">遊戲結束</p>
-                        <p className="text-sm opacity-70 mb-4">
+                        <p className="text-sm opacity-90 mb-4">
                           撈網已用盡。最終得分：{score}
                         </p>
                       </>
