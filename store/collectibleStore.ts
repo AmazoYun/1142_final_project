@@ -85,10 +85,10 @@ type CollectibleStore = {
   setSelectedId: (id: CollectibleId | null) => void;
 
   /**
-   * 核心：嘗試取得物品。
-   * 成功時寫入 acquired 並排入 acquireDialogue。
+   * 嘗試取得物品。
+   * skipDialogue：離開夜市撿氛圍物時不彈出取得對話，改由結局演出。
    */
-  tryAcquire: (id: CollectibleId) => AcquireCollectibleResult;
+  tryAcquire: (id: CollectibleId, options?: { skipDialogue?: boolean }) => AcquireCollectibleResult;
 
   advanceAcquireDialogue: () => void;
   dismissAcquireDialogue: () => void;
@@ -129,7 +129,7 @@ export const useCollectibleStore = create<CollectibleStore>((set, get) => ({
 
   setSelectedId: (id) => set({ selectedId: id }),
 
-  tryAcquire: (id) => {
+  tryAcquire: (id, options) => {
     const def = getCollectibleDef(id);
     if (!def) {
       return { success: false, reason: "unknown_id" };
@@ -141,8 +141,9 @@ export const useCollectibleStore = create<CollectibleStore>((set, get) => ({
     const acquired = [...get().acquired, id];
     set({ acquired });
 
+    const skipDialogue = options?.skipDialogue ?? false;
     const pending: PendingAcquireDialogue | null =
-      def.acquireDialogue.length > 0
+      !skipDialogue && def.acquireDialogue.length > 0
         ? { itemId: id, lines: def.acquireDialogue, lineIndex: 0 }
         : null;
 

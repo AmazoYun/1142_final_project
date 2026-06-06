@@ -2,6 +2,7 @@
 
 import React, { useEffect, useRef, useSyncExternalStore } from "react";
 import GameHudBar, { GameHudExtraStat } from "@/components/game/GameHudBar";
+import { awardStallReward } from "@/lib/collectibles/awardStallReward";
 import {
   durabilityCostForPoints,
   FISH_SIZE_CONFIG,
@@ -196,6 +197,7 @@ export default function CatchFishGame() {
   const gameStatsRef = useRef({ nextFishId: 1 });
   /** resetGameRef：Canvas effect 內定義 resetGame，掛到 ref 供按鈕在 effect 外呼叫 */
   const resetGameRef = useRef<() => void>(() => {});
+  const catchfishRewardGrantedRef = useRef(false);
 
   /**
    * statusRef — 鏡像 store.status，供 RAF 內的 update() 讀取
@@ -228,8 +230,16 @@ export default function CatchFishGame() {
     return () => window.clearTimeout(t);
   }, [netReplacedMessage, clearNetReplacedMessage]);
 
+  useEffect(() => {
+    if (status !== "gameover") return;
+    if (catchfishRewardGrantedRef.current) return;
+    catchfishRewardGrantedRef.current = true;
+    awardStallReward("catchfish");
+  }, [status]);
+
   /** 開始／再玩：先重置 Zustand，再重置 Canvas 魚群與撈網位置 */
   const handleStart = () => {
+    catchfishRewardGrantedRef.current = false;
     startGame();
     resetGameRef.current();
   };

@@ -36,7 +36,10 @@ import { useCollectibleStore } from "@/store/collectibleStore";
  * @param itemId - 與 data/collectibles-default.ts 中定義的 id 相同
  * @returns AcquireCollectibleResult
  */
-export function acquireCollectible(itemId: CollectibleId): AcquireCollectibleResult {
+export function acquireCollectible(
+  itemId: CollectibleId,
+  options?: { skipDialogue?: boolean },
+): AcquireCollectibleResult {
   if (typeof window === "undefined") {
     return { success: false, reason: "unknown_id" };
   }
@@ -50,7 +53,7 @@ export function acquireCollectible(itemId: CollectibleId): AcquireCollectibleRes
     return { success: false, reason: "unknown_id" };
   }
 
-  return state.tryAcquire(itemId);
+  return state.tryAcquire(itemId, options);
 }
 
 /**

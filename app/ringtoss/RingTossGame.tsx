@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import GameHudBar from "@/components/game/GameHudBar";
+import { awardStallReward } from "@/lib/collectibles/awardStallReward";
 //畫面各種size//
 const W = 720;
 const H = 640;
@@ -265,6 +266,7 @@ export default function RingTossGame() {
     "\u7b2c\u4e00\u6b65\uff1a\u7b49 X \u5faa\u74b0 1\u21927\u2192\u2026\u21921\uff0c\u6309\u7a7a\u767d\u9375\u9396\u5b9a",
   );
   const [gameOver, setGameOver] = useState(false);
+  const stallRewardGrantedRef = useRef(false);
   const [aimUi, setAimUi] = useState<AimState>(initialAim);
 
   const syncAimUi = useCallback(() => {
@@ -326,6 +328,10 @@ export default function RingTossGame() {
       setRingsLeft((left) => {
         const next = left - 1;
         if (next <= 0) {
+          if (!stallRewardGrantedRef.current) {
+            stallRewardGrantedRef.current = true;
+            awardStallReward("ringtoss");
+          }
           setGameOver(true);
           setMessage(`${resultMessage}\u3000\u56de\u5408\u7d50\u675f\uff01`);
         } else {
@@ -448,6 +454,7 @@ export default function RingTossGame() {
     setScore(0);
     setRingsLeft(RINGS_PER_ROUND);
     setGameOver(false);
+    stallRewardGrantedRef.current = false;
     setMessage("\u9396\u5b9a X\uff081\u21927\u2192\u2026\u21921\u5faa\u74b0\uff09");
     throwIdRef.current += 1;
     if (flyTimerRef.current) clearTimeout(flyTimerRef.current);

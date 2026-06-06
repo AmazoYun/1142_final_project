@@ -20,8 +20,8 @@ export const collectiblesDefault: CollectibleCatalog = {
     {
       id: "rust-coin",
       name: "生鏽的銅幣",
-      icon: "/collectibles/note-icon.svg",
-      image: "/collectibles/note.svg",
+      icon: "/collectibles/marble-icon.svg",
+      image: "/collectibles/marble.svg",
       description:
         "一枚看起來像舊時代的代幣，邊緣參差不齊。",
       acquireDialogue: [
@@ -65,8 +65,8 @@ export const collectiblesDefault: CollectibleCatalog = {
     {
       id: "keychain",
       name: "復古手電筒鑰匙圈",
-      icon: "/collectibles/note-icon.svg",
-      image: "/collectibles/note.svg",
+      icon: "/collectibles/bowl-icon.svg",
+      image: "/collectibles/bowl.svg",
       description:
         "一支金屬製、外殼冰冷且厚重的復古手電筒，開關已經鬆脫了。",
       acquireDialogue: [
@@ -85,8 +85,8 @@ export const collectiblesDefault: CollectibleCatalog = {
     {
       id: "bracelet",
       name: "褪色的姓名手環",
-      icon: "/collectibles/note-icon.svg",
-      image: "/collectibles/note.svg",
+      icon: "/collectibles/rocking-horse-icon.svg",
+      image: "/collectibles/rocking-horse.svg",
       description:
         "一條編織的手環，邊緣磨損，上面掛著一個刻有「宇」字的小玻璃珠。",
       acquireDialogue: [

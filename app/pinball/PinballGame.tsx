@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, type MouseEvent, type WheelEvent } from "react";
 import GameHudBar from "@/components/game/GameHudBar";
+import { awardStallReward } from "@/lib/collectibles/awardStallReward";
 
 type Vec = { x: number; y: number };
 type Ball = { pos: Vec; vel: Vec; radius: number; launched: boolean };
@@ -196,6 +197,7 @@ export default function PinballGame() {
   const layoutRef = useRef<LayoutData>(defaultLayout);
 
   const ballsRef = useRef(5);
+  const stallRewardGrantedRef = useRef(false);
   const scoreRef = useRef(0);
   const comboRef = useRef(1);
   const lastHitRef = useRef(0);
@@ -702,6 +704,10 @@ export default function PinballGame() {
           runDoneRef.current = false;
           spawnNextBall();
         } else {
+          if (!stallRewardGrantedRef.current) {
+            stallRewardGrantedRef.current = true;
+            awardStallReward("pinball");
+          }
           setStatus(`彈珠用完，總分 ${scoreRef.current}。按 R 重新開始`);
         }
       }, 2000);
@@ -1110,6 +1116,10 @@ export default function PinballGame() {
                   runDoneRef.current = false;
                   spawnNextBall();
                 } else {
+                  if (!stallRewardGrantedRef.current) {
+                    stallRewardGrantedRef.current = true;
+                    awardStallReward("pinball");
+                  }
                   setStatus(`彈珠用完，總分 ${scoreRef.current}。按 R 重新開始`);
                 }
               }, 900);
@@ -1216,6 +1226,7 @@ export default function PinballGame() {
         chargeStartRef.current = 0;
         chargeRatioRef.current = 0;
         ballsRef.current = 5;
+        stallRewardGrantedRef.current = false;
         setScore(0);
         setDisplayScore(0);
         setBalls(5);

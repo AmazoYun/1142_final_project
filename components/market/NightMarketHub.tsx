@@ -1,28 +1,57 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MutableRefObject } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import DialoguePanel from "@/components/narrative/DialoguePanel";
 import SceneCaption from "@/components/narrative/SceneCaption";
 import StallIntroModal from "./StallIntroModal";
 import StallRevisitBar from "./StallRevisitBar";
+import LeaveMarketModal from "./LeaveMarketModal";
+import HubPlayer from "./HubPlayer";
 import { narrativeDefault } from "@/data/narrative-default";
+import {
+  clampCameraOffset,
+  EDGE_STALL_Z_INDEX,
+  edgeStallCenterX,
+  edgeStallDimensions,
+  findNearInteractiveStall,
+  HUB_BACKGROUND,
+  HUB_LAYOUT,
+  stallGlowClass,
+  isPlayerNearStallGlow,
+  PLAYER_FLOOR_RATIO,
+  PLAYER_Z_INDEX,
+  playerSpawnX,
+  resolveHubMetrics,
+  stallCenterX,
+  stallDimensions,
+  STALL_FLOOR_RATIO,
+} from "@/lib/market/hubLayout";
 import type { StallId } from "@/lib/narrative/types";
 import { useStoryKeyAdvance } from "@/lib/useStoryKeyAdvance";
 import { useNarrativeStore } from "@/store/narrativeStore";
 
-const STALL_COUNT = 10;
-const STALL_W = 200;
-const WORLD_W = STALL_COUNT * STALL_W;
-const PLAYER_SPEED = 4;
-const SPAWN_STALL_INDEX = 1;
-const INITIAL_PLAYER_X = SPAWN_STALL_INDEX * STALL_W + STALL_W / 2;
-const INTERACTIVE: { index: number; id: StallId; label: string }[] = [
-  { index: 1, id: "pinball", label: "彈珠台" },
-  { index: 2, id: "ringtoss", label: "套圈圈" },
-  { index: 3, id: "balloonshoot", label: "射氣球" },
-  { index: 4, id: "catchfish", label: "撈金魚" },
-];
+const PLAYER_SPEED = 4 * 0.7;
+const DRAG_MOVE_FACTOR = 0.8 * 0.7;
+const MOVE_HINT_HIDE_MS = 3000;
+
+function trackSuccessfulMove(
+  movedMsRef: MutableRefObject<number>,
+  dt: number,
+  didMove: boolean,
+  setMoveHintVisible: (v: boolean) => void,
+) {
+  if (!didMove) return;
+  movedMsRef.current += dt;
+  if (movedMsRef.current >= MOVE_HINT_HIDE_MS) {
+    setMoveHintVisible(false);
+  }
+}
+
+function clamp(v: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, v));
+}
 
 export default function NightMarketHub() {
   const hydrate = useNarrativeStore((s) => s.hydrate);
@@ -30,25 +59,78 @@ export default function NightMarketHub() {
   const marketOpeningDone = useNarrativeStore((s) => s.marketOpeningDone);
   const completeMarketOpening = useNarrativeStore((s) => s.completeMarketOpening);
   const hasVisitedStall = useNarrativeStore((s) => s.hasVisitedStall);
-  const visitedStalls = useNarrativeStore((s) => s.visitedStalls);
   const nextBoundaryLine = useNarrativeStore((s) => s.nextBoundaryLine);
   const editMode = useNarrativeStore((s) => s.editMode);
   const setEditMode = useNarrativeStore((s) => s.setEditMode);
   const getText = useNarrativeStore((s) => s.getText);
 
-  const [playerX, setPlayerX] = useState(INITIAL_PLAYER_X);
+  const hubLayout = HUB_LAYOUT;
+  const playRef = useRef<HTMLDivElement>(null);
+  const [sceneSize, setSceneSize] = useState({ width: 960, height: 540 });
+
+  const metrics = useMemo(
+    () => resolveHubMetrics(sceneSize.width, sceneSize.height, hubLayout),
+    [sceneSize.width, sceneSize.height, hubLayout],
+  );
+
+  const initialSpawnX = useMemo(
+    () => playerSpawnX(metrics),
+    [metrics],
+  );
+
+  const [playerX, setPlayerX] = useState(initialSpawnX);
   const [opening, setOpening] = useState(false);
   const [openingIndex, setOpeningIndex] = useState(0);
   const [moveHintVisible, setMoveHintVisible] = useState(true);
   const [activeStall, setActiveStall] = useState<StallId | null>(null);
   const [nearStallId, setNearStallId] = useState<StallId | null>(null);
   const [boundaryMsg, setBoundaryMsg] = useState<string | null>(null);
+  const [leavePrompt, setLeavePrompt] = useState(false);
   const keysRef = useRef({ left: false, right: false });
   const movedMsRef = useRef(0);
   const dragRef = useRef<{ active: boolean; lastX: number }>({ active: false, lastX: 0 });
   const stallTriggeredRef = useRef<Set<StallId>>(new Set());
+  const spawnSyncedRef = useRef(false);
+  const playerAnimRef = useRef<{ facing: "left" | "right"; walking: boolean }>({
+    facing: "right",
+    walking: false,
+  });
+  const [playerAnim, setPlayerAnim] = useState(playerAnimRef.current);
 
-  const movementLocked = opening || activeStall !== null || boundaryMsg !== null;
+  const updatePlayerAnim = useCallback(
+    (facing: "left" | "right", walking: boolean) => {
+      const prev = playerAnimRef.current;
+      if (prev.facing === facing && prev.walking === walking) return;
+      playerAnimRef.current = { facing, walking };
+      setPlayerAnim({ facing, walking });
+    },
+    [],
+  );
+
+  const movementLocked = opening || activeStall !== null || boundaryMsg !== null || leavePrompt;
+
+  useEffect(() => {
+    const el = playRef.current;
+    if (!el) return;
+
+    const update = () => {
+      setSceneSize({
+        width: el.clientWidth,
+        height: el.clientHeight,
+      });
+    };
+
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (spawnSyncedRef.current) return;
+    setPlayerX(initialSpawnX);
+    spawnSyncedRef.current = true;
+  }, [initialSpawnX]);
 
   useEffect(() => {
     hydrate();
@@ -77,6 +159,23 @@ export default function NightMarketHub() {
     };
   }, [movementLocked]);
 
+  const movePlayer = useCallback(
+    (nextX: number) => {
+      const min = metrics.playerMinX;
+      const max = metrics.playerMaxX;
+      if (nextX < min) {
+        setBoundaryMsg(nextBoundaryLine());
+        return min;
+      }
+      if (nextX > max) {
+        setLeavePrompt(true);
+        return max;
+      }
+      return nextX;
+    },
+    [metrics.playerMinX, metrics.playerMaxX, nextBoundaryLine],
+  );
+
   useEffect(() => {
     if (movementLocked) return;
     let raf = 0;
@@ -87,37 +186,36 @@ export default function NightMarketHub() {
       let dx = 0;
       if (keysRef.current.left) dx -= PLAYER_SPEED * (dt / 16);
       if (keysRef.current.right) dx += PLAYER_SPEED * (dt / 16);
+
+      const walking =
+        keysRef.current.left || keysRef.current.right || dragRef.current.active;
+      let facing = playerAnimRef.current.facing;
+      if (keysRef.current.left) facing = "left";
+      else if (keysRef.current.right) facing = "right";
+      updatePlayerAnim(facing, walking);
+
       if (dx !== 0) {
-        movedMsRef.current += dt;
-        if (movedMsRef.current > 3000) setMoveHintVisible(false);
+        setPlayerX((x) => {
+          const nx = movePlayer(x + dx);
+          trackSuccessfulMove(
+            movedMsRef,
+            dt,
+            nx !== x,
+            setMoveHintVisible,
+          );
+          return nx;
+        });
       }
-      setPlayerX((x) => {
-        const min = 120;
-        const max = WORLD_W - 120;
-        const nx = x + dx;
-        if (nx < min) {
-          setBoundaryMsg(nextBoundaryLine());
-          return min;
-        }
-        if (nx > max) {
-          setBoundaryMsg(nextBoundaryLine());
-          return max;
-        }
-        return nx;
-      });
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [movementLocked, nextBoundaryLine]);
+  }, [movementLocked, movePlayer, updatePlayerAnim]);
 
-  const nearStall = useCallback(() => {
-    for (const s of INTERACTIVE) {
-      const sx = s.index * STALL_W + STALL_W / 2;
-      if (Math.abs(playerX - sx) < 90) return s.id;
-    }
-    return null;
-  }, [playerX]);
+  const nearStall = useCallback(
+    () => findNearInteractiveStall(playerX, hubLayout, metrics),
+    [playerX, hubLayout, metrics],
+  );
 
   useEffect(() => {
     const id = nearStall();
@@ -126,11 +224,10 @@ export default function NightMarketHub() {
     if (!hydrated) return;
     if (movementLocked) return;
     if (!id) return;
-    if (hasVisitedStall(id)) return;
     if (stallTriggeredRef.current.has(id)) return;
     stallTriggeredRef.current.add(id);
     setActiveStall(id);
-  }, [playerX, movementLocked, nearStall, hasVisitedStall, hydrated, visitedStalls]);
+  }, [playerX, movementLocked, nearStall, hydrated]);
 
   const openingLines = narrativeDefault.marketOpening;
   const openingLine = openingLines[openingIndex];
@@ -151,10 +248,27 @@ export default function NightMarketHub() {
     Boolean(boundaryMsg),
   );
 
+  const viewOffset = clampCameraOffset(playerX, sceneSize.width, metrics);
+
+  const sceneStyle = {
+    "--stall-floor": STALL_FLOOR_RATIO,
+    "--player-floor": PLAYER_FLOOR_RATIO,
+  } as CSSProperties;
+
   if (opening && openingLine) {
     return (
       <div className="fixed inset-0 z-50 overflow-hidden hub-shell">
-        <div className="absolute inset-0 hub-world-sky" />
+        <div ref={playRef} className="absolute inset-0 overflow-hidden" style={sceneStyle}>
+          <Image
+            src={HUB_BACKGROUND}
+            alt=""
+            fill
+            className="object-cover object-center"
+            priority
+            draggable={false}
+          />
+          <div className="hub-vignette" aria-hidden />
+        </div>
         <button
           type="button"
           className="absolute top-4 right-4 z-30 game-btn-ghost"
@@ -186,8 +300,6 @@ export default function NightMarketHub() {
     );
   }
 
-  const viewOffset = playerX - 480;
-
   return (
     <div className="hub-shell h-screen flex flex-col overflow-hidden">
       <header className="game-header shrink-0 flex items-center justify-between px-4 py-2">
@@ -201,7 +313,6 @@ export default function NightMarketHub() {
           >
             {editMode ? "關閉編輯" : "編輯模式"}
           </button>
-          {/* [收集系統] 跳轉至背包頁 /backpack */}
           <Link href="/backpack" className="game-btn-ghost text-xs">
             背包
           </Link>
@@ -211,49 +322,110 @@ export default function NightMarketHub() {
         </div>
       </header>
 
-      <div className="relative flex-1 overflow-hidden">
+      <div ref={playRef} className="relative flex-1 overflow-hidden" style={sceneStyle}>
         <div
-          className="absolute top-0 left-1/2 h-full transition-transform duration-75"
+          className="absolute top-0 left-0 h-full will-change-transform"
           style={{
-            width: WORLD_W,
-            transform: `translateX(calc(-50% - ${viewOffset}px))`,
+            width: metrics.worldWidth,
+            transform: `translateX(-${viewOffset}px)`,
           }}
         >
-          <div className="absolute inset-0 hub-world-sky" />
-          <div className="absolute bottom-0 left-0 right-0 h-24 hub-world-ground" />
+          <div
+            className="absolute top-0 left-0 h-full hub-world-bg"
+            style={{ width: metrics.worldWidth }}
+            aria-hidden
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={HUB_BACKGROUND}
+              alt=""
+              className="absolute top-0 left-0 hub-world-bg-image"
+              style={{
+                width: metrics.worldWidth,
+                height: metrics.worldHeight,
+              }}
+              draggable={false}
+            />
+          </div>
 
-          {Array.from({ length: STALL_COUNT }).map((_, i) => {
-            const interactive = INTERACTIVE.find((s) => s.index === i);
-            const x = i * STALL_W;
-            const near = interactive && Math.abs(playerX - (x + STALL_W / 2)) < 90;
+          {hubLayout.edgeStalls.map((stall, i) => {
+            const centerX = edgeStallCenterX(stall, metrics);
+            const { width, height } = edgeStallDimensions(stall, metrics);
+
             return (
               <div
-                key={i}
-                className="absolute bottom-16"
-                style={{ left: x, width: STALL_W }}
+                key={`edge-${i}`}
+                className="absolute hub-stall-slot"
+                style={{ left: centerX, zIndex: EDGE_STALL_Z_INDEX }}
               >
-                <div
-                  className={`hub-stall ${
-                    interactive
-                      ? near
-                        ? "hub-stall--interactive hub-stall--near"
-                        : "hub-stall--interactive"
-                      : "hub-stall--inactive"
-                  }`}
-                >
-                  <span className="hub-stall__tag">
-                    {interactive ? "可互動" : "攤位"}
-                  </span>
-                  <p className="hub-stall__name">
-                    {interactive?.label ?? `攤位 ${i + 1}`}
-                  </p>
+                <Image
+                  src={stall.image}
+                  alt="夜市攤位"
+                  width={width}
+                  height={height}
+                  className="hub-stall-image hub-stall-image--edge"
+                  draggable={false}
+                />
+              </div>
+            );
+          })}
+
+          {hubLayout.stalls
+            .slice()
+            .sort((a, b) => {
+              if (a.kind === b.kind) return 0;
+              return a.kind === "decorative" ? -1 : 1;
+            })
+            .map((stall, i) => {
+            const centerX = stallCenterX(stall, metrics);
+            const { width, height } = stallDimensions(stall, metrics);
+            const nearGlow =
+              stall.kind === "interactive" &&
+              isPlayerNearStallGlow(playerX, centerX, width);
+
+            return (
+              <div
+                key={`${stall.kind}-${stall.kind === "interactive" ? stall.id : stall.image}-${i}`}
+                className="absolute hub-stall-slot"
+                style={{ left: centerX, zIndex: stall.zIndex }}
+              >
+                <div className={`hub-stall-inner ${stallGlowClass(nearGlow)}`}>
+                  {stall.kind === "interactive" ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={stall.image}
+                      alt={stall.label}
+                      width={width}
+                      height={height}
+                      className="hub-stall-image"
+                      style={{ width, height }}
+                      draggable={false}
+                    />
+                  ) : (
+                    <Image
+                      src={stall.image}
+                      alt="夜市攤位"
+                      width={width}
+                      height={height}
+                      className="hub-stall-image hub-stall-image--decorative"
+                      draggable={false}
+                      priority={i < 4}
+                    />
+                  )}
                 </div>
               </div>
             );
           })}
 
-          <div className="hub-player" style={{ left: playerX }} />
+          <div
+            className="hub-player-slot"
+            style={{ left: playerX, zIndex: PLAYER_Z_INDEX }}
+          >
+            <HubPlayer facing={playerAnim.facing} walking={playerAnim.walking} />
+          </div>
         </div>
+
+        <div className="hub-vignette" aria-hidden />
 
         {moveHintVisible && !movementLocked && (
           <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20">
@@ -288,19 +460,38 @@ export default function NightMarketHub() {
               if (!dragRef.current.active) return;
               const dx = e.clientX - dragRef.current.lastX;
               dragRef.current.lastX = e.clientX;
-              movedMsRef.current += 16;
-              if (movedMsRef.current > 3000) setMoveHintVisible(false);
-              setPlayerX((x) => clamp(x + dx * 0.8, 120, WORLD_W - 120));
+              if (Math.abs(dx) < 0.5) return;
+              if (dx < 0) updatePlayerAnim("left", true);
+              else if (dx > 0) updatePlayerAnim("right", true);
+              setPlayerX((x) => {
+                const nx = movePlayer(x + dx * DRAG_MOVE_FACTOR);
+                trackSuccessfulMove(
+                  movedMsRef,
+                  16,
+                  nx !== x,
+                  setMoveHintVisible,
+                );
+                return nx;
+              });
             }}
             onPointerUp={() => {
               dragRef.current.active = false;
+              updatePlayerAnim(playerAnimRef.current.facing, false);
             }}
             onPointerLeave={() => {
               dragRef.current.active = false;
+              updatePlayerAnim(playerAnimRef.current.facing, false);
             }}
           />
         )}
       </div>
+
+      {leavePrompt && (
+        <LeaveMarketModal
+          onCancel={() => setLeavePrompt(false)}
+          onLeave={() => setLeavePrompt(false)}
+        />
+      )}
 
       {activeStall && (
         <StallIntroModal
@@ -316,8 +507,4 @@ export default function NightMarketHub() {
         !boundaryMsg && <StallRevisitBar stallId={nearStallId} />}
     </div>
   );
-}
-
-function clamp(v: number, min: number, max: number) {
-  return Math.max(min, Math.min(max, v));
 }

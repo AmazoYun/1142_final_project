@@ -8,18 +8,18 @@ type Props = {
   stallId: StallId;
 };
 
-/** 已看過劇情的攤位：靠近時顯示快捷進入 */
+/** 已看過劇情的攤位：靠近時於右上角顯示快捷進入，不遮擋角色 */
 export default function StallRevisitBar({ stallId }: Props) {
   const router = useRouter();
   const script = narrativeDefault.stalls[stallId];
 
   return (
-    <div className="game-bottom-bar fixed bottom-0 left-0 right-0 z-40 pointer-events-none px-4 pb-5">
-      <div className="pointer-events-auto mx-auto flex max-w-lg flex-col items-center gap-3">
-        <p className="game-panel px-4 py-2 text-sm tracking-widest">{script.title}</p>
+    <div className="hub-revisit-bar pointer-events-none fixed top-14 right-3 z-40 sm:top-16 sm:right-4">
+      <div className="pointer-events-auto game-panel flex max-w-[min(100vw-1.5rem,20rem)] flex-col gap-2 px-3 py-2 sm:flex-row sm:items-center sm:gap-3">
+        <p className="text-xs sm:text-sm tracking-widest shrink-0">{script.title}</p>
         <button
           type="button"
-          className="game-btn-primary min-w-[160px]"
+          className="game-btn-primary w-full text-xs sm:w-auto sm:min-w-[120px] sm:text-sm"
           onClick={() => router.push(script.href)}
         >
           {script.enterLabel}

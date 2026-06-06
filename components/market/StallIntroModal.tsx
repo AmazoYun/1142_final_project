@@ -87,11 +87,6 @@ export default function StallIntroModal({ script, onClose }: Props) {
     >
       <div className="absolute inset-0 hub-world-sky opacity-80" aria-hidden />
       <div className="relative z-10 space-y-3 max-w-2xl mx-auto w-full">
-        {script.glow && (
-          <p className="text-center game-status-chip text-accent-red animate-pulse">
-            ◆ 攤位發光中 ◆
-          </p>
-        )}
         {current?.kind === "caption" && (
           <SceneCaption
             id={current.id}

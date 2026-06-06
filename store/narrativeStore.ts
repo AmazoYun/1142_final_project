@@ -13,8 +13,10 @@ type Persisted = {
   editMode: boolean;
   overrides: Overrides;
   visitedStalls: StallId[];
+  completedStalls: StallId[];
   marketOpeningDone: boolean;
   boundaryIndex: number;
+  seenEndingId: string | null;
 };
 
 function loadPersisted(): Persisted {
@@ -24,8 +26,10 @@ function loadPersisted(): Persisted {
       editMode: false,
       overrides: {},
       visitedStalls: [],
+      completedStalls: [],
       marketOpeningDone: false,
       boundaryIndex: 0,
+      seenEndingId: null,
     };
   }
   try {
@@ -36,19 +40,33 @@ function loadPersisted(): Persisted {
         editMode: false,
         overrides: {},
         visitedStalls: [],
+        completedStalls: [],
         marketOpeningDone: false,
         boundaryIndex: 0,
+        seenEndingId: null,
       };
     }
-    return JSON.parse(raw) as Persisted;
+    const parsed = JSON.parse(raw) as Persisted;
+    return {
+      introDone: parsed.introDone ?? false,
+      editMode: parsed.editMode ?? false,
+      overrides: parsed.overrides ?? {},
+      visitedStalls: parsed.visitedStalls ?? [],
+      completedStalls: parsed.completedStalls ?? [],
+      marketOpeningDone: parsed.marketOpeningDone ?? false,
+      boundaryIndex: parsed.boundaryIndex ?? 0,
+      seenEndingId: parsed.seenEndingId ?? null,
+    };
   } catch {
     return {
       introDone: false,
       editMode: false,
       overrides: {},
       visitedStalls: [],
+      completedStalls: [],
       marketOpeningDone: false,
       boundaryIndex: 0,
+      seenEndingId: null,
     };
   }
 }
@@ -65,8 +83,10 @@ type NarrativeStore = {
   editMode: boolean;
   overrides: Overrides;
   visitedStalls: StallId[];
+  completedStalls: StallId[];
   marketOpeningDone: boolean;
   boundaryIndex: number;
+  seenEndingId: string | null;
   hydrate: () => void;
   setOverride: (id: string, text: string) => void;
   getText: (id: string, fallback: string) => string;
@@ -75,8 +95,11 @@ type NarrativeStore = {
   setEditMode: (on: boolean) => void;
   markStallVisited: (id: StallId) => void;
   hasVisitedStall: (id: StallId) => boolean;
+  markStallCompleted: (id: StallId) => void;
+  hasCompletedStall: (id: StallId) => boolean;
   completeMarketOpening: () => void;
   nextBoundaryLine: () => string | null;
+  markEndingSeen: (id: string) => void;
   resetAll: () => void;
 };
 
@@ -87,8 +110,10 @@ export const useNarrativeStore = create<NarrativeStore>((set, get) => ({
   editMode: false,
   overrides: {},
   visitedStalls: [],
+  completedStalls: [],
   marketOpeningDone: false,
   boundaryIndex: 0,
+  seenEndingId: null,
 
   hydrate: () => {
     const p = loadPersisted();
@@ -98,8 +123,10 @@ export const useNarrativeStore = create<NarrativeStore>((set, get) => ({
       editMode: p.editMode,
       overrides: p.overrides,
       visitedStalls: p.visitedStalls,
+      completedStalls: p.completedStalls,
       marketOpeningDone: p.marketOpeningDone,
       boundaryIndex: p.boundaryIndex,
+      seenEndingId: p.seenEndingId,
     });
   },
 
@@ -141,6 +168,17 @@ export const useNarrativeStore = create<NarrativeStore>((set, get) => ({
 
   hasVisitedStall: (id) => get().visitedStalls.includes(id),
 
+  markStallCompleted: (id) => {
+    const completed = get().completedStalls.includes(id)
+      ? get().completedStalls
+      : [...get().completedStalls, id];
+    set({ completedStalls: completed });
+    const p = loadPersisted();
+    savePersisted({ ...p, completedStalls: completed });
+  },
+
+  hasCompletedStall: (id) => get().completedStalls.includes(id),
+
   completeMarketOpening: () => {
     set({ marketOpeningDone: true });
     const p = loadPersisted();
@@ -157,21 +195,31 @@ export const useNarrativeStore = create<NarrativeStore>((set, get) => ({
     return get().getText(line.id, line.text);
   },
 
+  markEndingSeen: (id) => {
+    set({ seenEndingId: id });
+    const p = loadPersisted();
+    savePersisted({ ...p, seenEndingId: id });
+  },
+
   resetAll: () => {
     const fresh: Persisted = {
       introDone: false,
       editMode: false,
       overrides: get().overrides,
       visitedStalls: [],
+      completedStalls: [],
       marketOpeningDone: false,
       boundaryIndex: 0,
+      seenEndingId: null,
     };
     savePersisted(fresh);
     set({
       introDone: false,
       visitedStalls: [],
+      completedStalls: [],
       marketOpeningDone: false,
       boundaryIndex: 0,
+      seenEndingId: null,
     });
   },
 }));

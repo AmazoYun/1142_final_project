@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import GameHudBar from "@/components/game/GameHudBar";
+import { awardStallReward } from "@/lib/collectibles/awardStallReward";
 
 const W = 960;
 const H = 640;
@@ -370,6 +371,7 @@ export default function BalloonShootGame() {
   const scoreRef = useRef(0);
   const bulletsRef = useRef(INITIAL_BULLETS);
   const gameOverRef = useRef(false);
+  const stallRewardGrantedRef = useRef(false);
 
   const addScore = useCallback((delta: number, msg: string) => {
     scoreRef.current += delta;
@@ -400,6 +402,10 @@ export default function BalloonShootGame() {
       aimModeRef.current = false;
       setAimMode(false);
       finalizeAScores();
+      if (!stallRewardGrantedRef.current) {
+        stallRewardGrantedRef.current = true;
+        awardStallReward("balloonshoot");
+      }
       setToast("子彈用完，遊戲結束");
     }
     return true;
@@ -564,6 +570,7 @@ export default function BalloonShootGame() {
     scoreRef.current = 0;
     bulletsRef.current = INITIAL_BULLETS;
     gameOverRef.current = false;
+    stallRewardGrantedRef.current = false;
     setScore(0);
     setBullets(INITIAL_BULLETS);
     setGameOver(false);
