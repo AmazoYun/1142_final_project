@@ -1,0 +1,101 @@
+[
+  {
+    "id": "fg-10",
+    "image": "/final_pic/random/big_sausage_and_riceroll.webp",
+    "worldRatio": 0.27696117182310964,
+    "floorRatio": 1.0330224330940498,
+    "scale": 1.2123323391273213,
+    "blurPx": 6,
+    "opacity": 0.9301707199426668
+  },
+  {
+    "id": "fg-5",
+    "image": "/final_pic/random/sausage.webp",
+    "worldRatio": 0.5073953782332624,
+    "floorRatio": 1.0463393420996625,
+    "scale": 1.4046752877743507,
+    "blurPx": 4,
+    "opacity": 0.9923096453654938
+  },
+  {
+    "id": "fg-7",
+    "image": "/final_pic/random/foods.webp",
+    "worldRatio": 0.5088730615546025,
+    "floorRatio": 0.9727754775175885,
+    "scale": 1.396049862623906,
+    "blurPx": 5,
+    "opacity": 0.9686489271294338
+  },
+  {
+    "id": "fg-8",
+    "image": "/final_pic/random/foods.webp",
+    "worldRatio": 0.514024367837198,
+    "floorRatio": 1.0554624415679699,
+    "scale": 1.7403646958664298,
+    "blurPx": 5,
+    "opacity": 0.9764898591341346
+  },
+  {
+    "id": "fg-3",
+    "image": "/final_pic/random/big_sausage_and_riceroll.webp",
+    "worldRatio": 0.52155218229496,
+    "floorRatio": 0.9888758539081908,
+    "scale": 1.43602523723795,
+    "blurPx": 4,
+    "opacity": 0.9082597874793149
+  },
+  {
+    "id": "fg-9",
+    "image": "/final_pic/random/sausage.webp",
+    "worldRatio": 0.5230951314032097,
+    "floorRatio": 0.9794331752683999,
+    "scale": 1.6317585716329601,
+    "blurPx": 6,
+    "opacity": 0.9083933809102288
+  },
+  {
+    "id": "fg-2",
+    "image": "/final_pic/random/foods.webp",
+    "worldRatio": 0.5234925169653767,
+    "floorRatio": 1.0219195946177746,
+    "scale": 1.5561249010508988,
+    "blurPx": 6,
+    "opacity": 0.9093094061102444
+  },
+  {
+    "id": "fg-6",
+    "image": "/final_pic/random/stinky_tofu.webp",
+    "worldRatio": 0.5307906827904884,
+    "floorRatio": 1.0190953564948377,
+    "scale": 1.7090747221579954,
+    "blurPx": 6,
+    "opacity": 0.9142121631311138
+  },
+  {
+    "id": "fg-4",
+    "image": "/final_pic/random/stinky_tofu.webp",
+    "worldRatio": 0.5323908511405997,
+    "floorRatio": 1.0217557034495537,
+    "scale": 1.3885159875338213,
+    "blurPx": 6,
+    "opacity": 0.9710971234888413
+  },
+  {
+    "id": "fg-0",
+    "image": "/final_pic/random/foods.webp",
+    "worldRatio": 0.5463022775146104,
+    "floorRatio": 0.9971302829446194,
+    "scale": 1.4354206045423472,
+    "blurPx": 4,
+    "opacity": 0.9940775629328393
+  },
+  {
+    "id": "fg-1",
+    "image": "/final_pic/random/ice_cream.webp",
+    "worldRatio": 0.5481871997785445,
+    "floorRatio": 1.0490767305008075,
+    "scale": 1.685836488073222,
+    "blurPx": 3,
+    "opacity": 0.9968306799058652
+  }
+]

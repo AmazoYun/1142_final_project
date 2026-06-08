@@ -1,7 +1,4 @@
-import {
-  AMBIENT_COLLECTIBLE_IDS,
-  GAME_COLLECTIBLE_IDS,
-} from "@/lib/collectibles/stallRewards";
+import { GAME_COLLECTIBLE_IDS } from "@/lib/collectibles/stallRewards";
 import type { CollectibleId } from "@/lib/collectibles/types";
 import type { EndingId } from "./types";
 
@@ -9,25 +6,31 @@ function countGameItems(acquired: CollectibleId[]) {
   return GAME_COLLECTIBLE_IDS.filter((id) => acquired.includes(id)).length;
 }
 
-function hasAllAmbient(acquired: CollectibleId[]) {
-  return AMBIENT_COLLECTIBLE_IDS.every((id) => acquired.includes(id));
+function hasAllGameItems(acquired: CollectibleId[]) {
+  return countGameItems(acquired) >= 4;
 }
 
 /**
- * 依 PDF 四結局判定：
- * - true：四個遊戲獎品集滿
- * - stuck：未集滿四獎品，但持有兩件氛圍物
- * - loop：未集滿且無氛圍物組合（直接離開）
- * - basic：保留（四獎品時與 true 相同，由資料選 true）
+ * 四結局判定：
+ * - true（結局四）：集滿 1–4 道具 + 集點卡 + 超人面具
+ * - basic（結局一）：集滿 1–4 道具（無論有無集點卡）
+ * - stuck（結局三）：只有集點卡，未取得任何遊戲道具
+ * - loop（結局二）：未集滿 1–4 道具
  */
 export function resolveEndingId(acquired: CollectibleId[]): EndingId {
   const gameCount = countGameItems(acquired);
+  const hasCard = acquired.includes("point-card");
+  const hasMask = acquired.includes("plastic-mask");
 
-  if (gameCount >= 4) {
+  if (hasAllGameItems(acquired) && hasCard && hasMask) {
     return "true";
   }
 
-  if (gameCount === 0 && hasAllAmbient(acquired)) {
+  if (hasAllGameItems(acquired)) {
+    return "basic";
+  }
+
+  if (gameCount === 0 && hasCard && !hasMask) {
     return "stuck";
   }
 

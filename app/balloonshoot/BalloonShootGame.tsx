@@ -1,24 +1,46 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import GameHudBar from "@/components/game/GameHudBar";
+import GameRoundEndModal from "@/components/game/GameRoundEndModal";
+import { hasCollectible } from "@/lib/collectibles/acquireItem";
 import { awardStallReward } from "@/lib/collectibles/awardStallReward";
+import { balloonRewardEligible } from "@/lib/collectibles/rewardConditions";
+import { STALL_REWARD } from "@/lib/collectibles/stallRewards";
+import { returnToMarketAfterRound } from "@/lib/economy/returnToMarket";
+import { finalizeGameRound } from "@/lib/economy/processRoundEnd";
+import { trySpendPlayCost } from "@/lib/economy/playGame";
+import { reportStallScore } from "@/lib/player/reportStallScore";
+import { useTokenStore } from "@/store/tokenStore";
 import {
   BALLOON_COLORS,
   loadBalloonAssets,
   type BalloonAssets,
   type BalloonColor,
 } from "@/lib/balloonshoot/assets";
+import {
+  aHookPosition,
+  BALLOON_BODY_DROP,
+  BALLOON_TIE_Y_RATIO,
+  bHookPosition,
+  type BalloonZone,
+} from "@/lib/balloonshoot/hookLayout";
+import {
+  cloneBalloonLayout,
+  DEFAULT_BALLOON_LAYOUT,
+  migrateBalloonLayout,
+  type BalloonLayoutData,
+} from "@/lib/balloonshoot/layoutData";
+import { createBalloonShootSoundFx, type BalloonShootSoundFx } from "@/lib/balloonshoot/sounds";
 
 const W = 960;
-const H = 640;
+const H = 480;
 const INITIAL_BULLETS = 10;
-const GUN_X = W / 2;
-const FRONT_ROW_Y = H - 56;
 const PLAY_LEFT = 8;
 const PLAY_RIGHT = W - 8;
-const PLAY_TOP = 48;
-const PLAY_BOTTOM = FRONT_ROW_Y - 4;
+const PLAY_TOP = 40;
+const PLAY_BOTTOM = H - 12;
 
 const SCOPE_CX = W / 2;
 const SCOPE_CY = H / 2;
@@ -27,26 +49,9 @@ const SCOPE_DIAMETER = SCOPE_R * 2;
 const ZOOM = 1.2;
 const CROSSHAIR_R = 5;
 
-type Zone = "left" | "center" | "right";
+type Zone = BalloonZone;
 
-const COL_W = W / 3;
-const BALLOON_SHIFT_Y = 40;
-const ZONE_OFFSET_X: Record<Zone, number> = { left: 25, center: 0, right: -25 };
-/** A 區旋轉氣球：左右再往內 10px */
-const A_ZONE_EXTRA_X: Record<Zone, number> = { left: 10, center: 0, right: -10 };
-/** A 區旋轉氣球：左右 +50px、中央 +35px（相對 A_RING_CY） */
-const A_ZONE_EXTRA_Y: Record<Zone, number> = { left: 50, center: 35, right: 50 };
-/** 左區 B 區氣球再往右 10px */
-const B_ZONE_EXTRA_X: Record<Zone, number> = { left: 10, center: 0, right: 0 };
-/** B 區最下排：左 +5px、右 -5px */
-const B_ZONE_BOTTOM_ROW_EXTRA_X: Record<Zone, number> = { left: 5, center: 0, right: -5 };
-const BALLOON_SIZE_SCALE = 1.44;
-const A_RING_CY = 118 + BALLOON_SHIFT_Y;
-const A_RING_R_CENTER = 68;
-const A_RING_R_SIDE = 54;
-const B_ZONE_TOP = 368 + BALLOON_SHIFT_Y;
-const B_CELL_H = 54;
-const B_COL_OFFSETS = [-92, -38, 38, 92];
+const BALLOON_SIZE_SCALE = 1.32;
 
 type Balloon = {
   id: string;
@@ -65,16 +70,16 @@ type Balloon = {
 
 type ShotFlash = { x: number; y: number; start: number };
 
-const ZONE_CENTER_X: Record<Zone, number> = {
-  left: COL_W * 0.5,
-  center: COL_W * 1.5,
-  right: COL_W * 2.5,
+const ZONE_HIT_SCORE: Record<Zone, number> = {
+  left: 20,
+  center: 10,
+  right: 20,
 };
 
-const A_BASE_SCORE: Record<Zone, number> = {
-  left: 200,
-  center: 100,
-  right: 200,
+const ZONE_RING_BONUS: Record<Zone, number> = {
+  left: 100,
+  center: 50,
+  right: 100,
 };
 
 const ROT_SPEED: Record<Zone, number> = {
@@ -93,27 +98,8 @@ function clamp(v: number, min: number, max: number) {
   return Math.max(min, Math.min(max, v));
 }
 
-function zoneRingRadius(zone: Zone) {
-  return zone === "center" ? A_RING_R_CENTER : A_RING_R_SIDE;
-}
-
-function zoneCenterX(zone: Zone, area: "A" | "B" = "B") {
-  const base = ZONE_CENTER_X[zone] + ZONE_OFFSET_X[zone];
-  if (area === "A") return base + A_ZONE_EXTRA_X[zone];
-  return base;
-}
-
-function aRingCenterY(zone: Zone) {
-  return A_RING_CY + A_ZONE_EXTRA_Y[zone];
-}
-
-function bZoneBalloonX(zone: Zone, row: number, col: number) {
-  const bottomExtra = row === 1 ? B_ZONE_BOTTOM_ROW_EXTRA_X[zone] : 0;
-  return zoneCenterX(zone) + B_ZONE_EXTRA_X[zone] + bottomExtra + B_COL_OFFSETS[col]!;
-}
-
-function calcAScore(zone: Zone, popped: number, total: number) {
-  return Math.max(0, A_BASE_SCORE[zone] - (total - popped) * 50);
+function balloonBodyY(b: Balloon) {
+  return b.y + b.r * BALLOON_BODY_DROP;
 }
 
 function balloonRx(b: Balloon) {
@@ -121,8 +107,9 @@ function balloonRx(b: Balloon) {
 }
 
 function pointHitsBalloon(wx: number, wy: number, b: Balloon) {
+  const bodyY = balloonBodyY(b);
   const ex = (wx - b.x) / (balloonRx(b) + 2);
-  const ey = (wy - b.y) / (b.r + 2);
+  const ey = (wy - bodyY) / (b.r + 2);
   return ex * ex + ey * ey < 1;
 }
 
@@ -136,15 +123,15 @@ function findBalloonAt(wx: number, wy: number, balloons: Balloon[]): Balloon | n
   return null;
 }
 
-function createBalloons(): Balloon[] {
+function createBalloons(layout: BalloonLayoutData): Balloon[] {
   const list: Balloon[] = [];
   const zones: Zone[] = ["left", "center", "right"];
 
   for (const zone of zones) {
-    const cx = zoneCenterX(zone, "A");
     const r = BALLOON_R[zone] * BALLOON_SIZE_SCALE;
 
     for (let i = 0; i < 6; i++) {
+      const hook = aHookPosition(zone, i, 0, layout);
       list.push({
         id: `${zone}-A-${i}`,
         zone,
@@ -153,14 +140,15 @@ function createBalloons(): Balloon[] {
         color: BALLOON_COLORS[i % BALLOON_COLORS.length]!,
         r,
         alive: true,
-        x: cx,
-        y: aRingCenterY(zone),
+        x: hook.x,
+        y: hook.y,
       });
     }
 
     for (let row = 0; row < 2; row++) {
       for (let col = 0; col < 4; col++) {
         const idx = row * 4 + col;
+        const hook = bHookPosition(zone, row, col, layout);
         list.push({
           id: `${zone}-B-${idx}`,
           zone,
@@ -170,8 +158,8 @@ function createBalloons(): Balloon[] {
           color: BALLOON_COLORS[(idx + zones.indexOf(zone)) % BALLOON_COLORS.length]!,
           r,
           alive: true,
-          x: bZoneBalloonX(zone, row, col),
-          y: B_ZONE_TOP + row * B_CELL_H,
+          x: hook.x,
+          y: hook.y,
         });
       }
     }
@@ -180,14 +168,16 @@ function createBalloons(): Balloon[] {
   return list;
 }
 
-function updateRotatingPositions(balloons: Balloon[], angles: Record<Zone, number>) {
+function updateRotatingPositions(
+  balloons: Balloon[],
+  angles: Record<Zone, number>,
+  layout: BalloonLayoutData,
+) {
   for (const b of balloons) {
     if (b.area !== "A" || b.ringIndex === undefined) continue;
-    const cx = zoneCenterX(b.zone, "A");
-    const ringR = zoneRingRadius(b.zone);
-    const angle = angles[b.zone] + (b.ringIndex / 6) * Math.PI * 2;
-    b.x = cx + Math.cos(angle) * ringR;
-    b.y = aRingCenterY(b.zone) + Math.sin(angle) * ringR;
+    const hook = aHookPosition(b.zone, b.ringIndex, angles[b.zone], layout);
+    b.x = hook.x;
+    b.y = hook.y;
   }
 }
 
@@ -235,7 +225,7 @@ function drawBalloonSprite(
     const scale = targetH / img.naturalHeight;
     const w = img.naturalWidth * scale;
     const h = img.naturalHeight * scale;
-    const drawY = b.y - h * 0.55;
+    const drawY = b.y - h * BALLOON_TIE_Y_RATIO;
     drawBalloonShadow(ctx, b.x, drawY, w, h, true);
     ctx.drawImage(img, b.x - w / 2, drawY, w, h);
     return;
@@ -246,43 +236,15 @@ function drawBalloonSprite(
   const scale = targetH / img.naturalHeight;
   const w = img.naturalWidth * scale;
   const h = img.naturalHeight * scale;
-  const drawY = b.y - h * 0.52;
+  const drawY = b.y - h * BALLOON_TIE_Y_RATIO;
   drawBalloonShadow(ctx, b.x, drawY, w, h);
   ctx.drawImage(img, b.x - w / 2, drawY, w, h);
-}
-
-function drawGun(ctx: CanvasRenderingContext2D) {
-  ctx.save();
-  ctx.translate(GUN_X, FRONT_ROW_Y);
-
-  ctx.fillStyle = "rgba(90,80,70,0.22)";
-  ctx.fillRect(-56, -4, 112, 48);
-
-  ctx.fillStyle = "#27272a";
-  ctx.strokeStyle = "#18181b";
-  ctx.lineWidth = 2;
-  ctx.fillRect(-14, -2, 28, 20);
-  ctx.strokeRect(-14, -2, 28, 20);
-
-  const barrelH = 36;
-  ctx.fillStyle = "#3f3f46";
-  ctx.fillRect(-5, -barrelH, 10, barrelH);
-  ctx.strokeRect(-5, -barrelH, 10, barrelH);
-
-  ctx.fillStyle = "#52525b";
-  ctx.beginPath();
-  ctx.arc(0, -barrelH + 2, 7, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.stroke();
-  ctx.restore();
 }
 
 function renderGameScene(
   ctx: CanvasRenderingContext2D,
   assets: BalloonAssets | null,
   balloons: Balloon[],
-  now: number,
-  drawGunSprite: boolean,
 ) {
   if (assets?.background) {
     drawCoverBackground(ctx, assets.background, W, H);
@@ -306,7 +268,6 @@ function renderGameScene(
     }
   }
 
-  if (drawGunSprite) drawGun(ctx);
 }
 
 function drawScopeView(
@@ -392,42 +353,45 @@ export default function BalloonShootGame() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const bufferRef = useRef<HTMLCanvasElement | null>(null);
   const assetsRef = useRef<BalloonAssets | null>(null);
-  const balloonsRef = useRef<Balloon[]>(createBalloons());
+  const layoutRef = useRef<BalloonLayoutData>(cloneBalloonLayout(DEFAULT_BALLOON_LAYOUT));
+  const balloonsRef = useRef<Balloon[]>(createBalloons(layoutRef.current));
   const aimWorldRef = useRef({ x: W / 2, y: H / 2 });
   const aimModeRef = useRef(false);
   const rotationRef = useRef<Record<Zone, number>>({ left: 0, center: 0, right: 0 });
   const scoredARef = useRef<Set<Zone>>(new Set());
   const shotFlashRef = useRef<ShotFlash | null>(null);
+  const sfxRef = useRef<BalloonShootSoundFx | null>(null);
 
   const [score, setScore] = useState(0);
   const [bullets, setBullets] = useState(INITIAL_BULLETS);
   const [gameOver, setGameOver] = useState(false);
   const [aimMode, setAimMode] = useState(false);
-  const [toast, setToast] = useState("");
+  const [roundEnd, setRoundEnd] = useState<{ score: number; lotteryYuan: number } | null>(null);
+
+  const router = useRouter();
+  const tokens = useTokenStore((s) => s.tokens);
 
   const scoreRef = useRef(0);
   const bulletsRef = useRef(INITIAL_BULLETS);
   const gameOverRef = useRef(false);
   const stallRewardGrantedRef = useRef(false);
+  const roundEndHandledRef = useRef(false);
 
-  const addScore = useCallback((delta: number, msg: string) => {
+  const addScore = useCallback((delta: number) => {
     scoreRef.current += delta;
     setScore(scoreRef.current);
-    setToast(msg);
   }, []);
 
-  const finalizeAScores = useCallback(() => {
-    for (const zone of ["left", "center", "right"] as Zone[]) {
-      if (scoredARef.current.has(zone)) continue;
-      const aBalloons = balloonsRef.current.filter((b) => b.zone === zone && b.area === "A");
-      const popped = aBalloons.filter((b) => !b.alive).length;
-      if (popped === 0) continue;
-      scoredARef.current.add(zone);
-      const pts = calcAScore(zone, popped, 6);
-      const label = zone === "center" ? "中區 A" : zone === "left" ? "左區 A" : "右區 A";
-      addScore(pts, `${label} 區結算 +${pts} 分（少 ${6 - popped} 顆）`);
-    }
-  }, [addScore]);
+  const tryAwardBalloonReward = useCallback(() => {
+    if (stallRewardGrantedRef.current) return;
+    if (!balloonRewardEligible(balloonsRef.current)) return;
+
+    stallRewardGrantedRef.current = true;
+    const rewardId = STALL_REWARD.balloonshoot;
+    if (hasCollectible(rewardId)) return;
+
+    awardStallReward("balloonshoot");
+  }, []);
 
   const spendBullet = useCallback(() => {
     if (bulletsRef.current <= 0) return false;
@@ -438,15 +402,18 @@ export default function BalloonShootGame() {
       setGameOver(true);
       aimModeRef.current = false;
       setAimMode(false);
-      finalizeAScores();
-      if (!stallRewardGrantedRef.current) {
-        stallRewardGrantedRef.current = true;
-        awardStallReward("balloonshoot");
+      sfxRef.current?.stopAiming();
+      sfxRef.current?.stopRotating();
+      tryAwardBalloonReward();
+      reportStallScore("balloonshoot", scoreRef.current);
+      if (!roundEndHandledRef.current) {
+        roundEndHandledRef.current = true;
+        const summary = finalizeGameRound(scoreRef.current);
+        setRoundEnd({ score: summary.score, lotteryYuan: summary.lotteryYuan });
       }
-      setToast("子彈用完，遊戲結束");
     }
     return true;
-  }, [finalizeAScores]);
+  }, [tryAwardBalloonReward]);
 
   const tryScoreAZone = useCallback(
     (zone: Zone) => {
@@ -454,9 +421,7 @@ export default function BalloonShootGame() {
       const aBalloons = balloonsRef.current.filter((b) => b.zone === zone && b.area === "A");
       if (!aBalloons.every((b) => !b.alive)) return;
       scoredARef.current.add(zone);
-      const pts = calcAScore(zone, aBalloons.length, 6);
-      const label = zone === "center" ? "中區 A" : zone === "left" ? "左區 A" : "右區 A";
-      addScore(pts, `${label} 區清空 +${pts} 分`);
+      addScore(ZONE_RING_BONUS[zone]);
     },
     [addScore],
   );
@@ -465,13 +430,13 @@ export default function BalloonShootGame() {
     (b: Balloon, now: number) => {
       b.alive = false;
       b.popStart = now;
-      if (b.area === "B") {
-        addScore(10, `B區氣球 +10（${b.zone === "center" ? "中" : b.zone === "left" ? "左" : "右"}區）`);
-      } else {
+      addScore(ZONE_HIT_SCORE[b.zone]);
+      if (b.area === "A") {
         tryScoreAZone(b.zone);
       }
+      tryAwardBalloonReward();
     },
-    [addScore, tryScoreAZone],
+    [addScore, tryAwardBalloonReward, tryScoreAZone],
   );
 
   const popBalloonRef = useRef(popBalloon);
@@ -500,9 +465,10 @@ export default function BalloonShootGame() {
       shotFlashRef.current = { x: aim.x, y: aim.y, start: now };
 
       if (hit) {
+        sfxRef.current?.playShoot();
         popBalloonRef.current(hit, now);
       } else {
-        setToast("未命中");
+        sfxRef.current?.playShootMiss();
       }
     },
     [spendBullet],
@@ -513,10 +479,33 @@ export default function BalloonShootGame() {
       .then((assets) => {
         assetsRef.current = assets;
       })
-      .catch(() => {
-        setToast("素材載入失敗，使用備用顯示");
-      });
-    setToast("按住空白鍵進入瞄準模式，瞄準後點擊射擊");
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    const loadLayout = async () => {
+      try {
+        const res = await fetch("/api/balloon-layout");
+        if (!res.ok) return;
+        const data = migrateBalloonLayout(await res.json());
+        layoutRef.current = data;
+        balloonsRef.current = createBalloons(data);
+      } catch {
+        /* 使用預設布局 */
+      }
+    };
+    loadLayout();
+  }, []);
+
+  useEffect(() => {
+    const sfx = createBalloonShootSoundFx();
+    sfxRef.current = sfx;
+    sfx.preload();
+    sfx.startRotating();
+    return () => {
+      sfx.dispose();
+      sfxRef.current = null;
+    };
   }, []);
 
   useEffect(() => {
@@ -532,7 +521,7 @@ export default function BalloonShootGame() {
       if (bulletsRef.current <= 0) return;
       aimModeRef.current = true;
       setAimMode(true);
-      setToast("瞄準中：移動滑鼠調整準心，點擊左鍵發射");
+      sfxRef.current?.startAiming();
     };
 
     const onKeyUp = (e: KeyboardEvent) => {
@@ -540,9 +529,7 @@ export default function BalloonShootGame() {
       e.preventDefault();
       aimModeRef.current = false;
       setAimMode(false);
-      if (!gameOverRef.current) {
-        setToast("按住空白鍵進入瞄準模式");
-      }
+      sfxRef.current?.stopAiming();
     };
 
     window.addEventListener("keydown", onKeyDown);
@@ -563,18 +550,19 @@ export default function BalloonShootGame() {
     if (!ctx || !bctx) return;
 
     const tick = (now: number) => {
+      const layout = layoutRef.current;
       const rot = rotationRef.current;
       rot.left += ROT_SPEED.left;
       rot.center += ROT_SPEED.center;
       rot.right += ROT_SPEED.right;
-      updateRotatingPositions(balloonsRef.current, rot);
+      updateRotatingPositions(balloonsRef.current, rot, layout);
 
       if (shotFlashRef.current && now - shotFlashRef.current.start > 220) {
         shotFlashRef.current = null;
       }
 
       const balloons = balloonsRef.current;
-      renderGameScene(bctx, assetsRef.current, balloons, now, !aimModeRef.current);
+      renderGameScene(bctx, assetsRef.current, balloons);
 
       if (aimModeRef.current) {
         const aim = aimWorldRef.current;
@@ -605,7 +593,7 @@ export default function BalloonShootGame() {
   };
 
   const resetGame = () => {
-    balloonsRef.current = createBalloons();
+    balloonsRef.current = createBalloons(layoutRef.current);
     aimWorldRef.current = { x: W / 2, y: H / 2 };
     aimModeRef.current = false;
     rotationRef.current = { left: 0, center: 0, right: 0 };
@@ -615,60 +603,45 @@ export default function BalloonShootGame() {
     bulletsRef.current = INITIAL_BULLETS;
     gameOverRef.current = false;
     stallRewardGrantedRef.current = false;
+    roundEndHandledRef.current = false;
     setScore(0);
     setBullets(INITIAL_BULLETS);
     setGameOver(false);
     setAimMode(false);
-    setToast("按住空白鍵進入瞄準模式，瞄準後點擊射擊");
+    setRoundEnd(null);
+    sfxRef.current?.startRotating();
   };
 
   return (
-    <main className="min-h-full w-full game-stage-shell flex flex-col items-center justify-center p-4">
-      <div className="relative w-full max-w-[960px]">
-        <div className="game-playfield-frame overflow-hidden">
-          <GameHudBar
-            score={score}
-            resource={bullets}
-            resourceLabel="子彈"
-            resourceMax={INITIAL_BULLETS}
-          />
-          <canvas
-            ref={canvasRef}
-            width={W}
-            height={H}
-            className={`relative z-0 block w-full h-auto touch-none ${aimMode ? "cursor-none" : "cursor-default"}`}
-            onPointerMove={onPointerMove}
-            onPointerDown={onPointerDown}
-          />
+    <main className="flex h-full min-h-0 w-full flex-col overflow-hidden">
+      <div className="balloonshoot-stage relative min-h-0 min-w-0 flex-1">
+        <GameHudBar
+          score={score}
+          resource={bullets}
+          resourceLabel="子彈"
+          resourceMax={INITIAL_BULLETS}
+        />
+        <canvas
+          ref={canvasRef}
+          width={W}
+          height={H}
+          className={`block h-full w-full touch-none ${aimMode ? "cursor-none" : "cursor-default"}`}
+          onPointerMove={onPointerMove}
+          onPointerDown={onPointerDown}
+        />
 
-          <div className="absolute bottom-3 left-4 right-4 flex flex-wrap items-center justify-end gap-2 pointer-events-none">
-            <span className={`game-overlay-panel px-3 py-1 text-xs ${aimMode ? "border-accent-red" : ""}`}>
-              {aimMode ? "瞄準模式（放開空白鍵退出）" : "按住空白鍵瞄準"}
-            </span>
-          </div>
-        </div>
+        <GameRoundEndModal
+          open={gameOver && roundEnd !== null}
+          score={roundEnd?.score ?? 0}
+          lotteryYuan={roundEnd?.lotteryYuan ?? 0}
+          tokens={tokens}
+          onPlayAgain={() => {
+            if (!trySpendPlayCost()) return;
+            resetGame();
+          }}
+          onReturnToMarket={() => returnToMarketAfterRound(router)}
+        />
       </div>
-
-      <p className="mt-3 max-w-[960px] text-center game-message px-2">
-        中央手槍 · 空白鍵開啟 1.2 倍瞄準鏡（直徑 200px）· 點擊即射。左/右 A 區 200 分、中 A 區 100 分；B 區 +10。
-      </p>
-
-      {toast ? (
-        <p className="mt-2 text-sm font-medium text-foreground/80 text-center min-h-[1.25rem]">
-          {toast}
-        </p>
-      ) : null}
-
-      {gameOver ? (
-        <div className="mt-4 flex flex-col items-center gap-3">
-          <p className="game-score-board-bg px-6 py-3 text-lg font-bold tracking-widest text-center">
-            最終得分：{score}
-          </p>
-          <button type="button" onClick={resetGame} className="game-btn-primary">
-            再玩一次
-          </button>
-        </div>
-      ) : null}
     </main>
   );
 }

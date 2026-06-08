@@ -1,11 +1,24 @@
 "use client";
 
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import GameHudBar from "@/components/game/GameHudBar";
+import GameRoundEndModal from "@/components/game/GameRoundEndModal";
+import { hasCollectible } from "@/lib/collectibles/acquireItem";
 import { awardStallReward } from "@/lib/collectibles/awardStallReward";
+import { ringTossRewardEligible } from "@/lib/collectibles/rewardConditions";
+import { STALL_REWARD } from "@/lib/collectibles/stallRewards";
+import { returnToMarketAfterRound } from "@/lib/economy/returnToMarket";
+import { finalizeGameRound } from "@/lib/economy/processRoundEnd";
+import { trySpendPlayCost } from "@/lib/economy/playGame";
+import { reportStallScore } from "@/lib/player/reportStallScore";
+import { navigateWithFade } from "@/lib/navigation/navigateWithFade";
+import { usePageFadeIn } from "@/lib/navigation/usePageFadeIn";
+import { useTokenStore } from "@/store/tokenStore";
 import { loadRingTossAssets, type LoadedRingTossAssets } from "@/lib/ringtoss/assets";
+import { createRingTossSoundFx, type RingTossSoundFx } from "@/lib/ringtoss/sounds";
 import {
+  activeTargets,
   cycleLengthForAim,
   cycleValueForAim,
   hasActiveBottle,
@@ -18,9 +31,14 @@ import {
   type CellTarget,
   type ShelfRow,
 } from "@/lib/ringtoss/boardLayout";
-import { buildBottleTargets, readBackgroundImageData } from "@/lib/ringtoss/bottleLayout";
+import {
+  assignBonusBottles,
+  buildBottleTargets,
+  readBackgroundImageData,
+} from "@/lib/ringtoss/bottleLayout";
 import {
   drawAimCrosshair,
+  drawBonusBottleGlows,
   drawBottleSprite,
   drawHitLabel,
   drawLandedRingSprite,
@@ -32,7 +50,9 @@ import {
 
 const W = BOARD_WIDTH;
 const H = BOARD_HEIGHT;
-const RINGS_PER_ROUND = 5;
+/** 5 個紅光目標 + 容許誤套一般酒瓶的額外套環 */
+const RINGS_PER_ROUND = 8;
+const HIT_SCORE = 20;
 const CYCLE_MS = 260;
 const FLY_MS = 650;
 const RING_RADIUS = 20;
@@ -64,8 +84,15 @@ function initialAim(): AimState {
   return { phase: "x", cycleIndex: 0, lockedX: null, lockedY: null };
 }
 
+function comboMultiplier(consecutiveHits: number): number {
+  if (consecutiveHits >= 5) return 1.5;
+  if (consecutiveHits >= 4) return 1.4;
+  if (consecutiveHits >= 3) return 1.3;
+  return 1;
+}
+
 function resetTargets(cells: CellTarget[]): CellTarget[] {
-  return cells.map((t) => ({ ...t, hit: false }));
+  return assignBonusBottles(cells);
 }
 
 function createRing(): Ring {
@@ -83,15 +110,16 @@ function createRing(): Ring {
 }
 
 function aimGridPosition(aim: AimState, targets: CellTarget[]): { gx: number; gy: number } {
+  const active = activeTargets(targets);
   if (aim.phase === "x") {
-    const gx = cycleValueForAim(targets, aim.cycleIndex, "x", null);
-    const target = targets.find((t) => !t.hit && t.gx === gx);
+    const gx = cycleValueForAim(active, aim.cycleIndex, "x", null);
+    const target = active.find((t) => t.gx === gx);
     return { gx, gy: target?.gy ?? 1 };
   }
   if (aim.phase === "y" && aim.lockedX != null) {
     return {
       gx: aim.lockedX,
-      gy: cycleValueForAim(targets, aim.cycleIndex, "y", aim.lockedX),
+      gy: cycleValueForAim(active, aim.cycleIndex, "y", aim.lockedX),
     };
   }
   if (aim.lockedX != null && aim.lockedY != null) {
@@ -113,11 +141,14 @@ function drawScene(
   ch: number,
 ) {
   drawRingTossBackground(ctx, assets, cw, ch);
+  drawBonusBottleGlows(ctx, assets, targets, cw, ch);
 
-  const hlX = aim.phase === "x" ? cycleValueForAim(targets, aim.cycleIndex, "x", null) : aim.lockedX;
+  const active = activeTargets(targets);
+  const hlX =
+    aim.phase === "x" ? cycleValueForAim(active, aim.cycleIndex, "x", null) : aim.lockedX;
   const hlY =
     aim.phase === "y"
-      ? cycleValueForAim(targets, aim.cycleIndex, "y", aim.lockedX)
+      ? cycleValueForAim(active, aim.cycleIndex, "y", aim.lockedX)
       : aim.lockedY;
   const { gx: aimGx, gy: aimGy } = aimGridPosition(aim, targets);
 
@@ -174,19 +205,56 @@ export default function RingTossGame() {
   const lastCycleTickRef = useRef<number>(0);
   const flyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const throwIdRef = useRef(0);
+  const sfxRef = useRef<RingTossSoundFx | null>(null);
 
   const [score, setScore] = useState(0);
   const [ringsLeft, setRingsLeft] = useState(RINGS_PER_ROUND);
-  const [message, setMessage] = useState(
-    "\u7b2c\u4e00\u6b65\uff1a\u7b49 X \u5faa\u74b0 1\u21927\u2192\u2026\u21921\uff0c\u6309\u7a7a\u767d\u9375\u9396\u5b9a",
-  );
   const [gameOver, setGameOver] = useState(false);
+  const [roundEnd, setRoundEnd] = useState<{ score: number; lotteryYuan: number } | null>(null);
   const stallRewardGrantedRef = useRef(false);
+  const roundEndHandledRef = useRef(false);
+  const scoreRef = useRef(0);
+  const consecutiveHitsRef = useRef(0);
   const [aimUi, setAimUi] = useState<AimState>(initialAim);
+  const [targetsReady, setTargetsReady] = useState(false);
+
+  const tryGrantRingTossReward = useCallback(() => {
+    if (stallRewardGrantedRef.current) return;
+    if (!ringTossRewardEligible(targetsRef.current)) return;
+
+    stallRewardGrantedRef.current = true;
+    const rewardId = STALL_REWARD.ringtoss;
+    if (hasCollectible(rewardId)) return;
+
+    awardStallReward("ringtoss");
+  }, []);
+
+  usePageFadeIn();
+  const router = useRouter();
+  const tokens = useTokenStore((s) => s.tokens);
 
   const syncAimUi = useCallback(() => {
     setAimUi({ ...aimRef.current });
   }, []);
+
+  const resetGame = useCallback(() => {
+    stallRewardGrantedRef.current = false;
+    roundEndHandledRef.current = false;
+    scoreRef.current = 0;
+    consecutiveHitsRef.current = 0;
+    throwIdRef.current += 1;
+    if (flyTimerRef.current) clearTimeout(flyTimerRef.current);
+    landedRingsRef.current = [];
+    targetsRef.current = resetTargets(playableCellsRef.current);
+    ringRef.current = createRing();
+    aimRef.current = initialAim();
+    lastCycleTickRef.current = performance.now();
+    setScore(0);
+    setRingsLeft(RINGS_PER_ROUND);
+    setGameOver(false);
+    setRoundEnd(null);
+    syncAimUi();
+  }, [syncAimUi]);
 
   const resetAimForNextThrow = useCallback(() => {
     aimRef.current = initialAim();
@@ -201,38 +269,44 @@ export default function RingTossGame() {
       const targets = targetsRef.current;
       const target = targets.find((t) => t.gx === gx && t.gy === gy && !t.hit);
 
-      let resultMessage: string;
       if (target) {
+        sfxRef.current?.playHit();
         target.hit = true;
         const land = ringLandAt(gx, gy);
         landedRingsRef.current.push({ gx, gy, x: land.x, y: land.y });
-        setScore((s) => s + target.points);
-        resultMessage = `\u547d\u4e2d ${gx}, ${gy}\uff01+${target.points} \u5206`;
-      } else if (targets.some((t) => t.gx === gx && t.gy === gy && t.hit)) {
-        resultMessage = `\u843d\u9ede ${gx}, ${gy}\uff0c\u8a72\u67f1\u5df2\u547d\u4e2d\u904e`;
+        consecutiveHitsRef.current += 1;
+        const pts = Math.round(HIT_SCORE * comboMultiplier(consecutiveHitsRef.current));
+        setScore((s) => {
+          const next = s + pts;
+          scoreRef.current = next;
+          return next;
+        });
+        tryGrantRingTossReward();
       } else {
-        resultMessage = `\u843d\u9ede ${gx}, ${gy}\uff0c\u672a\u5957\u4e2d\u67f1\u5b50`;
+        sfxRef.current?.playMiss();
+        consecutiveHitsRef.current = 0;
       }
 
       setRingsLeft((left) => {
         const next = left - 1;
         if (next <= 0) {
-          if (!stallRewardGrantedRef.current) {
-            stallRewardGrantedRef.current = true;
-            awardStallReward("ringtoss");
-          }
+          tryGrantRingTossReward();
+          reportStallScore("ringtoss", scoreRef.current);
           setGameOver(true);
-          setMessage(`${resultMessage}\u3000\u56de\u5408\u7d50\u675f\uff01`);
+          if (!roundEndHandledRef.current) {
+            roundEndHandledRef.current = true;
+            const summary = finalizeGameRound(scoreRef.current);
+            setRoundEnd({ score: summary.score, lotteryYuan: summary.lotteryYuan });
+          }
         } else {
           ringRef.current = createRing();
           resetAimForNextThrow();
-          setMessage(resultMessage);
         }
         syncAimUi();
         return next;
       });
     },
-    [resetAimForNextThrow, syncAimUi],
+    [resetAimForNextThrow, syncAimUi, tryGrantRingTossReward],
   );
 
   const launchToCell = useCallback(
@@ -245,6 +319,7 @@ export default function RingTossGame() {
       ring.toY = target.y;
       ring.flyStart = performance.now();
       ring.flying = true;
+      sfxRef.current?.playToss();
       aimRef.current.phase = "flying";
       aimRef.current.lockedX = gx;
       aimRef.current.lockedY = gy;
@@ -264,13 +339,15 @@ export default function RingTossGame() {
   );
 
   const confirmAim = useCallback(() => {
-    if (gameOver || ringsLeft <= 0 || ringRef.current.flying) return;
+    if (!targetsReady || gameOver || ringsLeft <= 0 || ringRef.current.flying) return;
 
     const aim = aimRef.current;
-    const targets = targetsRef.current;
+    const active = activeTargets(targetsRef.current);
+    if (active.length === 0) return;
+
     const axis = aim.phase === "x" ? "x" : "y";
     const value = cycleValueForAim(
-      targets,
+      active,
       aim.cycleIndex,
       axis,
       aim.lockedX,
@@ -281,7 +358,6 @@ export default function RingTossGame() {
       aim.phase = "y";
       aim.cycleIndex = 0;
       lastCycleTickRef.current = performance.now();
-      setMessage(`X=${value}\u3002\u7b2c\u4e8c\u6b65\uff1a\u9396\u5b9a Y\uff08\u50c5\u5269\u9918\u74f6\u5b50\uff09`);
       syncAimUi();
       return;
     }
@@ -290,7 +366,7 @@ export default function RingTossGame() {
       aim.lockedY = value;
       launchToCell(aim.lockedX, value);
     }
-  }, [gameOver, ringsLeft, launchToCell, syncAimUi]);
+  }, [targetsReady, gameOver, ringsLeft, launchToCell, syncAimUi]);
 
   const tick = useCallback(
     (now: number) => {
@@ -302,16 +378,18 @@ export default function RingTossGame() {
       const aim = aimRef.current;
       const ring = ringRef.current;
       const targets = targetsRef.current;
+      const active = activeTargets(targets);
 
       if (
         !gameOver &&
         ringsLeft > 0 &&
         !ring.flying &&
+        active.length > 0 &&
         (aim.phase === "x" || aim.phase === "y")
       ) {
         if (now - lastCycleTickRef.current >= CYCLE_MS) {
           const cycleLen = cycleLengthForAim(
-            targets,
+            active,
             aim.phase === "x" ? "x" : "y",
             aim.lockedX,
           );
@@ -343,6 +421,16 @@ export default function RingTossGame() {
 
   useEffect(() => {
     document.title = "套圈圈｜無人夜市";
+  }, []);
+
+  useEffect(() => {
+    const sfx = createRingTossSoundFx();
+    sfxRef.current = sfx;
+    sfx.preload();
+    return () => {
+      sfx.dispose();
+      sfxRef.current = null;
+    };
   }, []);
 
   useEffect(() => {
@@ -383,12 +471,19 @@ export default function RingTossGame() {
         const playable = imageData
           ? buildBottleTargets(imageData, BOARD_WIDTH, BOARD_HEIGHT)
           : [];
-        playableCellsRef.current = playable;
-        targetsRef.current = resetTargets(playable);
+        playableCellsRef.current = playable.map(({ gx, gy, points }) => ({
+          gx,
+          gy,
+          points,
+          hit: false,
+        }));
+        targetsRef.current = assignBonusBottles(playableCellsRef.current);
         landedRingsRef.current = [];
+        setTargetsReady(playableCellsRef.current.length > 0);
       })
       .catch(() => {
         assetsRef.current = null;
+        setTargetsReady(false);
       });
     return () => {
       cancelled = true;
@@ -415,26 +510,8 @@ export default function RingTossGame() {
     return () => window.removeEventListener("keydown", onKey);
   }, [confirmAim]);
 
-  const targets = targetsRef.current;
-  const cur = cycleValueForAim(
-    targets,
-    aimUi.cycleIndex,
-    aimUi.phase === "y" ? "y" : "x",
-    aimUi.lockedX,
-  );
-  const phaseHint =
-    aimUi.phase === "x"
-      ? `X \u5faa\u74b0\u4e2d\uff1a${cur}`
-      : aimUi.phase === "y"
-        ? `X=${aimUi.lockedX}\uff0cY \u5faa\u74b0\uff1a${cur}`
-        : "";
-
   const actionLabel =
-    aimUi.phase === "x"
-      ? "鎖定 X"
-      : aimUi.phase === "y"
-        ? "鎖定 Y 並投出"
-        : "...";
+    aimUi.phase === "x" ? "鎖定 X" : aimUi.phase === "y" ? "鎖定 Y 並投出" : "...";
 
   return (
     <div ref={stageRef} className="ringtoss-stage">
@@ -444,25 +521,36 @@ export default function RingTossGame() {
         onPointerDown={() => confirmAim()}
       />
 
-      <Link href="/market" className="ringtoss-back-link">
+      <button
+        type="button"
+        className="ringtoss-back-link"
+        onClick={() => void navigateWithFade(router, "/market")}
+      >
         ← 返回夜市
-      </Link>
+      </button>
 
       <GameHudBar score={score} resource={ringsLeft} resourceLabel="套圈" />
-
-      <div className="ringtoss-message">
-        <p>{message}</p>
-        {phaseHint ? <p className="mt-0.5 text-xs opacity-90">{phaseHint}</p> : null}
-      </div>
 
       <button
         type="button"
         onClick={confirmAim}
-        disabled={gameOver || ringsLeft <= 0 || aimUi.phase === "flying"}
+        disabled={!targetsReady || gameOver || ringsLeft <= 0 || aimUi.phase === "flying"}
         className="ringtoss-action-btn"
       >
         {actionLabel}
       </button>
+
+      <GameRoundEndModal
+        open={gameOver && roundEnd !== null}
+        score={roundEnd?.score ?? 0}
+        lotteryYuan={roundEnd?.lotteryYuan ?? 0}
+        tokens={tokens}
+        onPlayAgain={() => {
+          if (!trySpendPlayCost()) return;
+          resetGame();
+        }}
+        onReturnToMarket={() => returnToMarketAfterRound(router)}
+      />
     </div>
   );
 }

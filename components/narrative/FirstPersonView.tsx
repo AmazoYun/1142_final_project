@@ -3,7 +3,7 @@
 import Image from "next/image";
 import type { VisualKind } from "@/lib/narrative/types";
 
-const INTRO_MARKET_FRIENDS = "/narrative/intro-market-friends.png";
+const INTRO_MARKET_FRIENDS = "/narrative/intro-market-friends.webp";
 
 type Props = { visual: VisualKind };
 

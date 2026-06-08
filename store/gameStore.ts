@@ -73,9 +73,9 @@ export const FISH_SIZE_CONFIG: Record<
   FishSize,
   { points: number; radius: number; durabilityCost: number; label: string }
 > = {
-  small: { points: 2, radius: 9, durabilityCost: 8, label: "小" },
-  medium: { points: 5, radius: 14, durabilityCost: 18, label: "中" },
-  large: { points: 9, radius: 20, durabilityCost: 32, label: "大" },
+  small: { points: 10, radius: 50, durabilityCost: 8, label: "小" },
+  medium: { points: 30, radius: 68, durabilityCost: 18, label: "中" },
+  large: { points: 50, radius: 88, durabilityCost: 32, label: "大" },
 };
 
 // -----------------------------------------------------------------------------
@@ -89,9 +89,7 @@ export const FISH_SIZE_CONFIG: Record<
  * 結果會寫入 Fish.points，撈到時原樣傳入 onFishCaught。
  */
 export function randomPointsForSize(size: FishSize): number {
-  if (size === "small") return 1 + Math.floor(Math.random() * 3); // 1, 2, 3
-  if (size === "medium") return 4 + Math.floor(Math.random() * 4); // 4, 5, 6, 7
-  return 8 + Math.floor(Math.random() * 3); // 8, 9, 10
+  return FISH_SIZE_CONFIG[size].points;
 }
 
 /**
@@ -113,7 +111,7 @@ export function durabilityCostForPoints(points: number, size: FishSize): number 
 // -----------------------------------------------------------------------------
 
 /** 初始可使用的撈網總數（含手上這一張） */
-const INITIAL_NETS = 3;
+export const INITIAL_NETS = 3;
 
 /**
  * GameStore — Zustand store 的完整形狀
@@ -157,6 +155,10 @@ export type GameStore = {
    * @param durabilityCost 該魚的耐久扣除（生成時已決定）
    */
   onFishCaught: (points: number, durabilityCost: number) => void;
+  /** 按住空白鍵撈魚時每秒扣除耐久 */
+  drainDurability: (amount: number) => void;
+  /** 耐久歸零時損壞網子並更換或結束 */
+  breakNet: () => void;
   /** 關閉換網提示（由 page.tsx 的 setTimeout 觸發） */
   clearNetReplacedMessage: () => void;
   /** 按下「返回」：回到 idle，不保留本局進度 */
@@ -243,6 +245,24 @@ export const useGameStore = create<GameStore>((set, get) => ({
       status,
       netReplacedMessage,
     });
+  },
+
+  drainDurability: (amount) => {
+    const state = get();
+    if (state.status !== "playing" || amount <= 0) return;
+    const durability = Math.max(0, state.durability - amount);
+    set({ durability });
+  },
+
+  breakNet: () => {
+    const state = get();
+    if (state.status !== "playing") return;
+    const netsRemaining = state.netsRemaining - 1;
+    if (netsRemaining > 0) {
+      set({ durability: 100, netsRemaining, netReplacedMessage: true });
+    } else {
+      set({ durability: 0, netsRemaining: 0, status: "gameover" });
+    }
   },
 
   clearNetReplacedMessage: () => set({ netReplacedMessage: false }),

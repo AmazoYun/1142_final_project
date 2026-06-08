@@ -28,6 +28,7 @@
 
 import { getCollectibleDef } from "@/data/collectibles-default";
 import type { AcquireCollectibleResult, CollectibleId } from "@/lib/collectibles/types";
+import { playRewardSound } from "@/lib/market/hubSounds";
 import { useCollectibleStore } from "@/store/collectibleStore";
 
 /**
@@ -53,7 +54,11 @@ export function acquireCollectible(
     return { success: false, reason: "unknown_id" };
   }
 
-  return state.tryAcquire(itemId, options);
+  const result = state.tryAcquire(itemId, options);
+  if (result.success) {
+    playRewardSound();
+  }
+  return result;
 }
 
 /**

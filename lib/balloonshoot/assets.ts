@@ -39,11 +39,11 @@ export function loadBalloonAssets(): Promise<BalloonAssets> {
   const full = {} as Record<BalloonColor, HTMLImageElement>;
   const broken = {} as Record<BalloonColor, HTMLImageElement>;
 
-  return loadImage("/balloonshoot/background.png").then(async (background) => {
+  return loadImage("/balloonshoot/background.webp").then(async (background) => {
     await Promise.all(
       BALLOON_COLORS.map(async (color) => {
-        full[color] = await loadImage(`/balloonshoot/balloon_${color}_full.png`);
-        broken[color] = await loadImage(`/balloonshoot/balloon_${color}_broken.png`);
+        full[color] = await loadImage(`/balloonshoot/balloon_${color}_full.webp`);
+        broken[color] = await loadImage(`/balloonshoot/balloon_${color}_broken.webp`);
       }),
     );
     return { background, full, broken };

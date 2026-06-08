@@ -14,6 +14,8 @@ type Persisted = {
   overrides: Overrides;
   visitedStalls: StallId[];
   completedStalls: StallId[];
+  playedStalls: StallId[];
+  pointCardSpawnStall: StallId | null;
   marketOpeningDone: boolean;
   boundaryIndex: number;
   seenEndingId: string | null;
@@ -27,6 +29,8 @@ function loadPersisted(): Persisted {
       overrides: {},
       visitedStalls: [],
       completedStalls: [],
+      playedStalls: [],
+      pointCardSpawnStall: null,
       marketOpeningDone: false,
       boundaryIndex: 0,
       seenEndingId: null,
@@ -41,6 +45,8 @@ function loadPersisted(): Persisted {
         overrides: {},
         visitedStalls: [],
         completedStalls: [],
+        playedStalls: [],
+        pointCardSpawnStall: null,
         marketOpeningDone: false,
         boundaryIndex: 0,
         seenEndingId: null,
@@ -53,6 +59,8 @@ function loadPersisted(): Persisted {
       overrides: parsed.overrides ?? {},
       visitedStalls: parsed.visitedStalls ?? [],
       completedStalls: parsed.completedStalls ?? [],
+      playedStalls: parsed.playedStalls ?? [],
+      pointCardSpawnStall: parsed.pointCardSpawnStall ?? null,
       marketOpeningDone: parsed.marketOpeningDone ?? false,
       boundaryIndex: parsed.boundaryIndex ?? 0,
       seenEndingId: parsed.seenEndingId ?? null,
@@ -64,6 +72,8 @@ function loadPersisted(): Persisted {
       overrides: {},
       visitedStalls: [],
       completedStalls: [],
+      playedStalls: [],
+      pointCardSpawnStall: null,
       marketOpeningDone: false,
       boundaryIndex: 0,
       seenEndingId: null,
@@ -84,6 +94,8 @@ type NarrativeStore = {
   overrides: Overrides;
   visitedStalls: StallId[];
   completedStalls: StallId[];
+  playedStalls: StallId[];
+  pointCardSpawnStall: StallId | null;
   marketOpeningDone: boolean;
   boundaryIndex: number;
   seenEndingId: string | null;
@@ -92,11 +104,14 @@ type NarrativeStore = {
   getText: (id: string, fallback: string) => string;
   completeIntro: () => void;
   replayIntro: () => void;
-  setEditMode: (on: boolean) => void;
+  setEditMode: () => void;
   markStallVisited: (id: StallId) => void;
   hasVisitedStall: (id: StallId) => boolean;
   markStallCompleted: (id: StallId) => void;
   hasCompletedStall: (id: StallId) => boolean;
+  markStallPlayed: (id: StallId) => void;
+  hasPlayedStall: (id: StallId) => boolean;
+  ensurePointCardSpawn: () => StallId | null;
   completeMarketOpening: () => void;
   nextBoundaryLine: () => string | null;
   markEndingSeen: (id: string) => void;
@@ -111,6 +126,8 @@ export const useNarrativeStore = create<NarrativeStore>((set, get) => ({
   overrides: {},
   visitedStalls: [],
   completedStalls: [],
+  playedStalls: [],
+  pointCardSpawnStall: null,
   marketOpeningDone: false,
   boundaryIndex: 0,
   seenEndingId: null,
@@ -120,10 +137,12 @@ export const useNarrativeStore = create<NarrativeStore>((set, get) => ({
     set({
       hydrated: true,
       introDone: p.introDone,
-      editMode: p.editMode,
+      editMode: false,
       overrides: p.overrides,
       visitedStalls: p.visitedStalls,
       completedStalls: p.completedStalls,
+      playedStalls: p.playedStalls,
+      pointCardSpawnStall: p.pointCardSpawnStall,
       marketOpeningDone: p.marketOpeningDone,
       boundaryIndex: p.boundaryIndex,
       seenEndingId: p.seenEndingId,
@@ -151,10 +170,8 @@ export const useNarrativeStore = create<NarrativeStore>((set, get) => ({
     savePersisted({ ...p, introDone: false });
   },
 
-  setEditMode: (on) => {
-    set({ editMode: on });
-    const p = loadPersisted();
-    savePersisted({ ...p, editMode: on });
+  setEditMode: () => {
+    set({ editMode: false });
   },
 
   markStallVisited: (id) => {
@@ -178,6 +195,28 @@ export const useNarrativeStore = create<NarrativeStore>((set, get) => ({
   },
 
   hasCompletedStall: (id) => get().completedStalls.includes(id),
+
+  markStallPlayed: (id) => {
+    const played = get().playedStalls.includes(id)
+      ? get().playedStalls
+      : [...get().playedStalls, id];
+    set({ playedStalls: played });
+    const p = loadPersisted();
+    savePersisted({ ...p, playedStalls: played });
+  },
+
+  hasPlayedStall: (id) => get().playedStalls.includes(id),
+
+  ensurePointCardSpawn: () => {
+    const existing = get().pointCardSpawnStall;
+    if (existing) return existing;
+    const stalls: StallId[] = ["pinball", "balloonshoot", "ringtoss", "catchfish"];
+    const pick = stalls[Math.floor(Math.random() * stalls.length)]!;
+    set({ pointCardSpawnStall: pick });
+    const p = loadPersisted();
+    savePersisted({ ...p, pointCardSpawnStall: pick });
+    return pick;
+  },
 
   completeMarketOpening: () => {
     set({ marketOpeningDone: true });
@@ -208,6 +247,8 @@ export const useNarrativeStore = create<NarrativeStore>((set, get) => ({
       overrides: get().overrides,
       visitedStalls: [],
       completedStalls: [],
+      playedStalls: [],
+      pointCardSpawnStall: null,
       marketOpeningDone: false,
       boundaryIndex: 0,
       seenEndingId: null,
@@ -217,6 +258,8 @@ export const useNarrativeStore = create<NarrativeStore>((set, get) => ({
       introDone: false,
       visitedStalls: [],
       completedStalls: [],
+      playedStalls: [],
+      pointCardSpawnStall: null,
       marketOpeningDone: false,
       boundaryIndex: 0,
       seenEndingId: null,

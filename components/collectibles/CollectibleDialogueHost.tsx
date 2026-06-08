@@ -34,7 +34,7 @@ export default function CollectibleDialogueHost() {
   if (!line) return null;
 
   return (
-    <div className="collectible-dialogue-host fixed inset-0 z-[100] flex items-end justify-center p-4 pb-8 pointer-events-none">
+    <div className="collectible-dialogue-host fixed inset-0 flex items-end justify-center p-4 pb-8 pointer-events-none">
       <div className="pointer-events-auto w-full max-w-2xl">
         <DialoguePanel
           id={line.id}

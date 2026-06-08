@@ -63,6 +63,21 @@ export type PendingAcquireDialogue = {
   lineIndex: number;
 };
 
+/** 取得道具全螢幕動畫（CollectibleAcquireOverlay 消費） */
+export type PendingAcquireAnimation = {
+  itemId?: CollectibleId;
+  itemName: string;
+  image: string;
+  /** 集點卡拾取後附加提示 */
+  extraMessage?: string;
+  /** Hub 點擊代幣時顯示的說明文字 */
+  description?: string;
+  /** acquire：取得道具；inspect：Hub 點擊代幣檢視 */
+  mode?: "acquire" | "inspect";
+  /** 飛行動畫目標元素 selector */
+  flyTargetSelector?: string;
+};
+
 /** Debug 時可覆寫的文字（僅影響顯示，不寫回 data 檔） */
 export type CollectibleTextOverrides = {
   descriptions: Record<CollectibleId, string>;

@@ -20,6 +20,7 @@ export default function StallRevisitBar({ stallId }: Props) {
         <button
           type="button"
           className="game-btn-primary w-full text-xs sm:w-auto sm:min-w-[120px] sm:text-sm"
+          data-ui-sound="enter"
           onClick={() => router.push(script.href)}
         >
           {script.enterLabel}

@@ -39,7 +39,6 @@ export const narrativeDefault: NarrativeBundle = {
       id: "intro-b3",
       buttons: [
         { id: "btn-play", label: "開始遊玩", action: "goto-market" },
-        { id: "btn-edit", label: "編輯模式", action: "edit-mode" },
       ],
     },
   ],
@@ -49,11 +48,6 @@ export const narrativeDefault: NarrativeBundle = {
     { type: "dialogue", id: "mkt-d3", speaker: "主角", text: "他們該不會躲在一旁想看我一枝獨秀吧" },
     { type: "dialogue", id: "mkt-d4", speaker: "主角", text: "好啊...既然如此，我就把遊戲贏遍給你們看" },
     { type: "dialogue", id: "mkt-d5", speaker: "主角", text: "你們就等著請客吧！" },
-    {
-      type: "caption",
-      id: "mkt-c1",
-      text: "電腦版請按左右鍵移動，手機版請往左右拖曳移動",
-    },
   ],
   moveHint: {
     id: "move-hint",
@@ -82,8 +76,8 @@ export const narrativeDefault: NarrativeBundle = {
         { id: "pin-d4", speaker: "主角", text: "阿強最爛，他一定會請客" },
       ],
       enterLabel: "進入遊戲",
-      laterLabel: "等等再玩",
-      howToPlay: "空白鍵蓄力發射，R 重置。待補充完整玩法說明。",
+      howToPlay:
+        "按住空白鍵蓄力（2 秒集滿），放開發射。共 5 顆彈珠，集滿時該次得分 ×1.2，未成功發射不消耗彈珠。碰撞圓形障礙物 +10 分；落入底部六條通道（由左至右）：+1 球、得分 ÷2、生鏽銅幣（已擁有則無效果）、+30 分、-10 分、得分 ×2。彈珠用完即結束，按 R 可重新開始。",
     },
     balloonshoot: {
       stallId: "balloonshoot",
@@ -103,8 +97,8 @@ export const narrativeDefault: NarrativeBundle = {
         { id: "bal-d4", speaker: "主角", text: "話說，老闆人呢..." },
       ],
       enterLabel: "進入遊戲",
-      laterLabel: "等等再玩",
-      howToPlay: "按住空白鍵開啟瞄準鏡，點擊射擊。待補充完整玩法說明。",
+      howToPlay:
+        "按住空白鍵進入瞄準，移動滑鼠對準氣球後點擊射擊。共 10 發子彈。任選左／中／右一區，射完該區旋轉環且同區 B 區至少四顆，即可獲得道具。中央區每顆 +10 分、旋轉環 +50；左右區每顆 +20 分、旋轉環 +100。",
     },
     ringtoss: {
       stallId: "ringtoss",
@@ -124,8 +118,8 @@ export const narrativeDefault: NarrativeBundle = {
         { id: "ring-d4", speaker: "主角", text: "誒不是，獎品也太舊了吧" },
       ],
       enterLabel: "進入遊戲",
-      laterLabel: "等等再玩",
-      howToPlay: "點擊瞄準並投出套環。待補充完整玩法說明。",
+      howToPlay:
+        "先等 X 軸在 1→7 間循環，按空白鍵或點擊鎖定 X；再鎖定 Y 並投出套環。每局會隨機抽出 5 個發紅光的酒瓶，套中全部即可獲得道具。共 8 個套環，套中一個 +20 分；連中 3 個 ×1.3、4 個 ×1.4、5 個 ×1.5。",
     },
     catchfish: {
       stallId: "catchfish",
@@ -143,9 +137,9 @@ export const narrativeDefault: NarrativeBundle = {
         { id: "fish-d2", speaker: "主角", text: "我已經沒什麼興趣玩了..." },
         { id: "fish-d3", speaker: "主角", text: "我只想知道現在到底是什麼情況...我的朋友們都去哪了" },
       ],
-      enterLabel: "玩撈金魚",
-      laterLabel: "離開這裡",
-      howToPlay: "移動滑鼠操控撈網，撈到金魚得分。待補充完整玩法說明。",
+      enterLabel: "進入遊戲",
+      howToPlay:
+        "移動滑鼠控制撈網。魚會逃跑，追上後按住空白鍵撈魚，大魚需按住更久。共 3 張撈網，耐久歸零換下一張。大魚 50 分、中魚 30 分、小魚 10 分；撈滿 3 條大魚額外 +100，撈超過 7 條魚額外 +50。",
     },
   },
 };

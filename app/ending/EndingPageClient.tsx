@@ -1,12 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import StorySequencePlayer from "@/components/narrative/StorySequencePlayer";
 import { getEndingScript } from "@/data/endings-default";
 import { prepareItemsForLeave } from "@/lib/endings/prepareLeave";
+import { navigateWithFade } from "@/lib/navigation/navigateWithFade";
+import { usePageFadeIn } from "@/lib/navigation/usePageFadeIn";
 import type { EndingId } from "@/lib/endings/types";
+import { usePlayerStore } from "@/store/playerStore";
 import { useNarrativeStore } from "@/store/narrativeStore";
 
 export default function EndingPageClient() {
@@ -16,6 +18,10 @@ export default function EndingPageClient() {
   const hydrate = useNarrativeStore((s) => s.hydrate);
   const markEndingSeen = useNarrativeStore((s) => s.markEndingSeen);
   const replayIntro = useNarrativeStore((s) => s.replayIntro);
+  const finishRun = usePlayerStore((s) => s.finishRun);
+  const hydratePlayers = usePlayerStore((s) => s.hydrate);
+
+  usePageFadeIn();
 
   const [endingId, setEndingId] = useState<EndingId | null>(
     loopRestart ? "loop" : null,
@@ -24,6 +30,7 @@ export default function EndingPageClient() {
 
   useEffect(() => {
     hydrate();
+    hydratePlayers();
     if (loopRestart) {
       markEndingSeen("loop");
       return;
@@ -31,7 +38,8 @@ export default function EndingPageClient() {
     const id = prepareItemsForLeave();
     setEndingId(id);
     markEndingSeen(id);
-  }, [hydrate, loopRestart, markEndingSeen]);
+    finishRun(id);
+  }, [hydrate, hydratePlayers, loopRestart, markEndingSeen, finishRun]);
 
   const script = useMemo(
     () => (endingId ? getEndingScript(endingId) : null),
@@ -41,7 +49,7 @@ export default function EndingPageClient() {
   const onComplete = useCallback(() => {
     setPlaying(false);
     if (script?.restartMarket) {
-      router.push("/market?loop=1");
+      void navigateWithFade(router, "/market?loop=1");
     }
   }, [script?.restartMarket, router]);
 
@@ -65,20 +73,28 @@ export default function EndingPageClient() {
     <div className="min-h-screen flex flex-col items-center justify-center hub-shell px-6 gap-6">
       <h1 className="game-title text-xl">{script.title}</h1>
       {script.restartMarket ? (
-        <Link href="/market?loop=1" className="game-btn-primary">
+        <button
+          type="button"
+          className="game-btn-primary"
+          onClick={() => void navigateWithFade(router, "/market?loop=1")}
+        >
           再次走入夜市
-        </Link>
+        </button>
       ) : (
         <div className="flex flex-wrap gap-3 justify-center">
-          <Link href="/market" className="game-btn-ghost">
+          <button
+            type="button"
+            className="game-btn-ghost"
+            onClick={() => void navigateWithFade(router, "/market")}
+          >
             回到夜市
-          </Link>
+          </button>
           <button
             type="button"
             className="game-btn-primary"
             onClick={() => {
               replayIntro();
-              router.push("/");
+              void navigateWithFade(router, "/");
             }}
           >
             從頭開始

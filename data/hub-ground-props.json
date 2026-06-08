@@ -1,0 +1,898 @@
+[
+  {
+    "id": "prop-0",
+    "image": "/final_pic/hub_layers/ground_prop_00.webp",
+    "worldRatio": 0.07066377869019475,
+    "floorRatio": 0.8242766407904023,
+    "nativeWidth": 38,
+    "nativeHeight": 33
+  },
+  {
+    "id": "prop-1",
+    "image": "/final_pic/hub_layers/ground_prop_01.webp",
+    "worldRatio": 0.07861118317228376,
+    "floorRatio": 0.8045165843330981,
+    "nativeWidth": 68,
+    "nativeHeight": 64
+  },
+  {
+    "id": "prop-2",
+    "image": "/final_pic/hub_layers/ground_prop_02.webp",
+    "worldRatio": 0.08272615796167922,
+    "floorRatio": 0.8383909668313339,
+    "nativeWidth": 31,
+    "nativeHeight": 26
+  },
+  {
+    "id": "prop-3",
+    "image": "/final_pic/hub_layers/ground_prop_03.webp",
+    "worldRatio": 0.15181822030310727,
+    "floorRatio": 0.8129851799576571,
+    "nativeWidth": 46,
+    "nativeHeight": 34
+  },
+  {
+    "id": "prop-4",
+    "image": "/final_pic/hub_layers/ground_prop_04.webp",
+    "worldRatio": 0.17212640959605172,
+    "floorRatio": 0.8165137614678899,
+    "nativeWidth": 56,
+    "nativeHeight": 42
+  },
+  {
+    "id": "prop-5",
+    "image": "/final_pic/hub_layers/ground_prop_05.webp",
+    "worldRatio": 0.18288423771969495,
+    "floorRatio": 0.8129851799576571,
+    "nativeWidth": 54,
+    "nativeHeight": 76
+  },
+  {
+    "id": "prop-6",
+    "image": "/final_pic/hub_layers/ground_prop_06.webp",
+    "worldRatio": 0.18544667510046994,
+    "floorRatio": 0.5730416372618208,
+    "nativeWidth": 32,
+    "nativeHeight": 26
+  },
+  {
+    "id": "prop-7",
+    "image": "/final_pic/hub_layers/ground_prop_07.webp",
+    "worldRatio": 0.19020521464191995,
+    "floorRatio": 0.8348623853211009,
+    "nativeWidth": 112,
+    "nativeHeight": 44
+  },
+  {
+    "id": "prop-8",
+    "image": "/final_pic/hub_layers/ground_prop_08.webp",
+    "worldRatio": 0.1980004266251171,
+    "floorRatio": 0.6774876499647142,
+    "nativeWidth": 50,
+    "nativeHeight": 44
+  },
+  {
+    "id": "prop-9",
+    "image": "/final_pic/hub_layers/ground_prop_09.webp",
+    "worldRatio": 0.23828467692396377,
+    "floorRatio": 0.8038108680310515,
+    "nativeWidth": 63,
+    "nativeHeight": 28
+  },
+  {
+    "id": "prop-10",
+    "image": "/final_pic/hub_layers/ground_prop_10.webp",
+    "worldRatio": 0.2573664141038974,
+    "floorRatio": 0.8383909668313339,
+    "nativeWidth": 35,
+    "nativeHeight": 28
+  },
+  {
+    "id": "prop-11",
+    "image": "/final_pic/hub_layers/ground_prop_11.webp",
+    "worldRatio": 0.26009712866838725,
+    "floorRatio": 0.5596330275229358,
+    "nativeWidth": 99,
+    "nativeHeight": 65
+  },
+  {
+    "id": "prop-12",
+    "image": "/final_pic/hub_layers/ground_prop_12.webp",
+    "worldRatio": 0.26498831414929014,
+    "floorRatio": 0.8016937191249118,
+    "nativeWidth": 37,
+    "nativeHeight": 28
+  },
+  {
+    "id": "prop-13",
+    "image": "/final_pic/hub_layers/ground_prop_13.webp",
+    "worldRatio": 0.2666266574363214,
+    "floorRatio": 0.6414961185603387,
+    "nativeWidth": 26,
+    "nativeHeight": 45
+  },
+  {
+    "id": "prop-14",
+    "image": "/final_pic/hub_layers/ground_prop_14.webp",
+    "worldRatio": 0.2676589969889673,
+    "floorRatio": 0.5786873676781934,
+    "nativeWidth": 27,
+    "nativeHeight": 76
+  },
+  {
+    "id": "prop-15",
+    "image": "/final_pic/hub_layers/ground_prop_15.webp",
+    "worldRatio": 0.26978515750948323,
+    "floorRatio": 0.7805222300635145,
+    "nativeWidth": 68,
+    "nativeHeight": 80
+  },
+  {
+    "id": "prop-16",
+    "image": "/final_pic/hub_layers/ground_prop_16.webp",
+    "worldRatio": 0.27244468740145206,
+    "floorRatio": 0.7148906139731828,
+    "nativeWidth": 42,
+    "nativeHeight": 67
+  },
+  {
+    "id": "prop-17",
+    "image": "/final_pic/hub_layers/ground_prop_17.webp",
+    "worldRatio": 0.2770401689963409,
+    "floorRatio": 0.5758645024700071,
+    "nativeWidth": 62,
+    "nativeHeight": 68
+  },
+  {
+    "id": "prop-18",
+    "image": "/final_pic/hub_layers/ground_prop_18.webp",
+    "worldRatio": 0.2820407173104759,
+    "floorRatio": 0.7734650670430487,
+    "nativeWidth": 59,
+    "nativeHeight": 70
+  },
+  {
+    "id": "prop-19",
+    "image": "/final_pic/hub_layers/ground_prop_19.webp",
+    "worldRatio": 0.2826158706209628,
+    "floorRatio": 0.8115737473535639,
+    "nativeWidth": 50,
+    "nativeHeight": 28
+  },
+  {
+    "id": "prop-20",
+    "image": "/final_pic/hub_layers/ground_prop_20.webp",
+    "worldRatio": 0.2869557178731441,
+    "floorRatio": 0.570924488355681,
+    "nativeWidth": 37,
+    "nativeHeight": 59
+  },
+  {
+    "id": "prop-21",
+    "image": "/final_pic/hub_layers/ground_prop_21.webp",
+    "worldRatio": 0.28715023050961136,
+    "floorRatio": 0.8059280169371913,
+    "nativeWidth": 35,
+    "nativeHeight": 51
+  },
+  {
+    "id": "prop-22",
+    "image": "/final_pic/hub_layers/ground_prop_22.webp",
+    "worldRatio": 0.2887507657368256,
+    "floorRatio": 0.547635850388144,
+    "nativeWidth": 52,
+    "nativeHeight": 32
+  },
+  {
+    "id": "prop-23",
+    "image": "/final_pic/hub_layers/ground_prop_23.webp",
+    "worldRatio": 0.28877663576923396,
+    "floorRatio": 0.781227946365561,
+    "nativeWidth": 61,
+    "nativeHeight": 34
+  },
+  {
+    "id": "prop-24",
+    "image": "/final_pic/hub_layers/ground_prop_24.webp",
+    "worldRatio": 0.29449061410685634,
+    "floorRatio": 0.8101623147494708,
+    "nativeWidth": 37,
+    "nativeHeight": 46
+  },
+  {
+    "id": "prop-25",
+    "image": "/final_pic/hub_layers/ground_prop_25.webp",
+    "worldRatio": 0.29974240205991143,
+    "floorRatio": 0.5483415666901905,
+    "nativeWidth": 28,
+    "nativeHeight": 49
+  },
+  {
+    "id": "prop-26",
+    "image": "/final_pic/hub_layers/ground_prop_26.webp",
+    "worldRatio": 0.3005485345750156,
+    "floorRatio": 0.6901905434015526,
+    "nativeWidth": 52,
+    "nativeHeight": 36
+  },
+  {
+    "id": "prop-27",
+    "image": "/final_pic/hub_layers/ground_prop_27.webp",
+    "worldRatio": 0.3064575395817458,
+    "floorRatio": 0.5666901905434015,
+    "nativeWidth": 33,
+    "nativeHeight": 32
+  },
+  {
+    "id": "prop-28",
+    "image": "/final_pic/hub_layers/ground_prop_28.webp",
+    "worldRatio": 0.32187368957941753,
+    "floorRatio": 0.7671136203246295,
+    "nativeWidth": 41,
+    "nativeHeight": 51
+  },
+  {
+    "id": "prop-29",
+    "image": "/final_pic/hub_layers/ground_prop_29.webp",
+    "worldRatio": 0.3243356527865319,
+    "floorRatio": 0.8221594918842625,
+    "nativeWidth": 31,
+    "nativeHeight": 35
+  },
+  {
+    "id": "prop-30",
+    "image": "/final_pic/hub_layers/ground_prop_30.webp",
+    "worldRatio": 0.32486522075716445,
+    "floorRatio": 0.7720536344389556,
+    "nativeWidth": 53,
+    "nativeHeight": 69
+  },
+  {
+    "id": "prop-31",
+    "image": "/final_pic/hub_layers/ground_prop_31.webp",
+    "worldRatio": 0.33435188476293487,
+    "floorRatio": 0.7769936485532816,
+    "nativeWidth": 55,
+    "nativeHeight": 72
+  },
+  {
+    "id": "prop-32",
+    "image": "/final_pic/hub_layers/ground_prop_32.webp",
+    "worldRatio": 0.3361951969001977,
+    "floorRatio": 0.5744530698659139,
+    "nativeWidth": 57,
+    "nativeHeight": 48
+  },
+  {
+    "id": "prop-33",
+    "image": "/final_pic/hub_layers/ground_prop_33.webp",
+    "worldRatio": 0.3383324396278422,
+    "floorRatio": 0.7593507410021172,
+    "nativeWidth": 42,
+    "nativeHeight": 53
+  },
+  {
+    "id": "prop-34",
+    "image": "/final_pic/hub_layers/ground_prop_34.webp",
+    "worldRatio": 0.35407631670437095,
+    "floorRatio": 0.5850388143966125,
+    "nativeWidth": 143,
+    "nativeHeight": 85
+  },
+  {
+    "id": "prop-35",
+    "image": "/final_pic/hub_layers/ground_prop_35.webp",
+    "worldRatio": 0.35805745387162186,
+    "floorRatio": 0.8454481298517996,
+    "nativeWidth": 97,
+    "nativeHeight": 39
+  },
+  {
+    "id": "prop-36",
+    "image": "/final_pic/hub_layers/ground_prop_36.webp",
+    "worldRatio": 0.36666127877710303,
+    "floorRatio": 0.5666901905434015,
+    "nativeWidth": 32,
+    "nativeHeight": 31
+  },
+  {
+    "id": "prop-37",
+    "image": "/final_pic/hub_layers/ground_prop_37.webp",
+    "worldRatio": 0.36779160480969825,
+    "floorRatio": 0.7734650670430487,
+    "nativeWidth": 56,
+    "nativeHeight": 71
+  },
+  {
+    "id": "prop-38",
+    "image": "/final_pic/hub_layers/ground_prop_38.webp",
+    "worldRatio": 0.3813983481848242,
+    "floorRatio": 0.771347918136909,
+    "nativeWidth": 52,
+    "nativeHeight": 68
+  },
+  {
+    "id": "prop-39",
+    "image": "/final_pic/hub_layers/ground_prop_39.webp",
+    "worldRatio": 0.3973423080179494,
+    "floorRatio": 0.7649964714184898,
+    "nativeWidth": 34,
+    "nativeHeight": 26
+  },
+  {
+    "id": "prop-40",
+    "image": "/final_pic/hub_layers/ground_prop_40.webp",
+    "worldRatio": 0.4082975851136887,
+    "floorRatio": 0.5483415666901905,
+    "nativeWidth": 63,
+    "nativeHeight": 33
+  },
+  {
+    "id": "prop-41",
+    "image": "/final_pic/hub_layers/ground_prop_41.webp",
+    "worldRatio": 0.4170595239099457,
+    "floorRatio": 0.7776993648553282,
+    "nativeWidth": 62,
+    "nativeHeight": 59
+  },
+  {
+    "id": "prop-42",
+    "image": "/final_pic/hub_layers/ground_prop_42.webp",
+    "worldRatio": 0.41713883645632216,
+    "floorRatio": 0.8207480592801694,
+    "nativeWidth": 51,
+    "nativeHeight": 32
+  },
+  {
+    "id": "prop-43",
+    "image": "/final_pic/hub_layers/ground_prop_43.webp",
+    "worldRatio": 0.4173148135769955,
+    "floorRatio": 0.5899788285109386,
+    "nativeWidth": 27,
+    "nativeHeight": 31
+  },
+  {
+    "id": "prop-44",
+    "image": "/final_pic/hub_layers/ground_prop_44.webp",
+    "worldRatio": 0.4173979117953268,
+    "floorRatio": 0.5786873676781934,
+    "nativeWidth": 33,
+    "nativeHeight": 92
+  },
+  {
+    "id": "prop-45",
+    "image": "/final_pic/hub_layers/ground_prop_45.webp",
+    "worldRatio": 0.41941825316817927,
+    "floorRatio": 0.681016231474947,
+    "nativeWidth": 28,
+    "nativeHeight": 63
+  },
+  {
+    "id": "prop-46",
+    "image": "/final_pic/hub_layers/ground_prop_46.webp",
+    "worldRatio": 0.42158674347560177,
+    "floorRatio": 0.7769936485532816,
+    "nativeWidth": 55,
+    "nativeHeight": 65
+  },
+  {
+    "id": "prop-47",
+    "image": "/final_pic/hub_layers/ground_prop_47.webp",
+    "worldRatio": 0.4253197736916526,
+    "floorRatio": 0.5779816513761468,
+    "nativeWidth": 136,
+    "nativeHeight": 91
+  },
+  {
+    "id": "prop-48",
+    "image": "/final_pic/hub_layers/ground_prop_48.webp",
+    "worldRatio": 0.4266786858088708,
+    "floorRatio": 0.8122794636556104,
+    "nativeWidth": 65,
+    "nativeHeight": 36
+  },
+  {
+    "id": "prop-49",
+    "image": "/final_pic/hub_layers/ground_prop_49.webp",
+    "worldRatio": 0.4294465135115009,
+    "floorRatio": 0.565984474241355,
+    "nativeWidth": 39,
+    "nativeHeight": 37
+  },
+  {
+    "id": "prop-50",
+    "image": "/final_pic/hub_layers/ground_prop_50.webp",
+    "worldRatio": 0.45185009487666034,
+    "floorRatio": 0.5652787579393084,
+    "nativeWidth": 57,
+    "nativeHeight": 48
+  },
+  {
+    "id": "prop-51",
+    "image": "/final_pic/hub_layers/ground_prop_51.webp",
+    "worldRatio": 0.4683874327859764,
+    "floorRatio": 0.570924488355681,
+    "nativeWidth": 53,
+    "nativeHeight": 78
+  },
+  {
+    "id": "prop-52",
+    "image": "/final_pic/hub_layers/ground_prop_52.webp",
+    "worldRatio": 0.48268834137668276,
+    "floorRatio": 0.7911079745942131,
+    "nativeWidth": 62,
+    "nativeHeight": 30
+  },
+  {
+    "id": "prop-53",
+    "image": "/final_pic/hub_layers/ground_prop_53.webp",
+    "worldRatio": 0.4926798628791056,
+    "floorRatio": 0.776287932251235,
+    "nativeWidth": 46,
+    "nativeHeight": 66
+  },
+  {
+    "id": "prop-54",
+    "image": "/final_pic/hub_layers/ground_prop_54.webp",
+    "worldRatio": 0.4971941715655203,
+    "floorRatio": 0.565984474241355,
+    "nativeWidth": 39,
+    "nativeHeight": 38
+  },
+  {
+    "id": "prop-55",
+    "image": "/final_pic/hub_layers/ground_prop_55.webp",
+    "worldRatio": 0.501593945216876,
+    "floorRatio": 0.8143966125617502,
+    "nativeWidth": 47,
+    "nativeHeight": 27
+  },
+  {
+    "id": "prop-56",
+    "image": "/final_pic/hub_layers/ground_prop_56.webp",
+    "worldRatio": 0.5087435118474749,
+    "floorRatio": 0.8341566690190544,
+    "nativeWidth": 113,
+    "nativeHeight": 53
+  },
+  {
+    "id": "prop-57",
+    "image": "/final_pic/hub_layers/ground_prop_57.webp",
+    "worldRatio": 0.5100014355848089,
+    "floorRatio": 0.7678193366266761,
+    "nativeWidth": 79,
+    "nativeHeight": 63
+  },
+  {
+    "id": "prop-58",
+    "image": "/final_pic/hub_layers/ground_prop_58.webp",
+    "worldRatio": 0.5133595787869204,
+    "floorRatio": 0.8454481298517996,
+    "nativeWidth": 66,
+    "nativeHeight": 47
+  },
+  {
+    "id": "prop-59",
+    "image": "/final_pic/hub_layers/ground_prop_59.webp",
+    "worldRatio": 0.5193389608848676,
+    "floorRatio": 0.8256880733944955,
+    "nativeWidth": 99,
+    "nativeHeight": 51
+  },
+  {
+    "id": "prop-60",
+    "image": "/final_pic/hub_layers/ground_prop_60.webp",
+    "worldRatio": 0.5218720112530477,
+    "floorRatio": 0.7339449541284404,
+    "nativeWidth": 99,
+    "nativeHeight": 26
+  },
+  {
+    "id": "prop-61",
+    "image": "/final_pic/hub_layers/ground_prop_61.webp",
+    "worldRatio": 0.5286303783908349,
+    "floorRatio": 0.8186309103740297,
+    "nativeWidth": 71,
+    "nativeHeight": 31
+  },
+  {
+    "id": "prop-62",
+    "image": "/final_pic/hub_layers/ground_prop_62.webp",
+    "worldRatio": 0.534214705792049,
+    "floorRatio": 0.8242766407904023,
+    "nativeWidth": 38,
+    "nativeHeight": 33
+  },
+  {
+    "id": "prop-63",
+    "image": "/final_pic/hub_layers/ground_prop_63.webp",
+    "worldRatio": 0.542162110274138,
+    "floorRatio": 0.8045165843330981,
+    "nativeWidth": 68,
+    "nativeHeight": 64
+  },
+  {
+    "id": "prop-64",
+    "image": "/final_pic/hub_layers/ground_prop_64.webp",
+    "worldRatio": 0.5462770850635335,
+    "floorRatio": 0.8383909668313339,
+    "nativeWidth": 31,
+    "nativeHeight": 26
+  },
+  {
+    "id": "prop-65",
+    "image": "/final_pic/hub_layers/ground_prop_65.webp",
+    "worldRatio": 0.6153691474049615,
+    "floorRatio": 0.8129851799576571,
+    "nativeWidth": 46,
+    "nativeHeight": 34
+  },
+  {
+    "id": "prop-66",
+    "image": "/final_pic/hub_layers/ground_prop_66.webp",
+    "worldRatio": 0.6356773366979059,
+    "floorRatio": 0.8165137614678899,
+    "nativeWidth": 56,
+    "nativeHeight": 42
+  },
+  {
+    "id": "prop-67",
+    "image": "/final_pic/hub_layers/ground_prop_67.webp",
+    "worldRatio": 0.6464351648215492,
+    "floorRatio": 0.8129851799576571,
+    "nativeWidth": 54,
+    "nativeHeight": 76
+  },
+  {
+    "id": "prop-68",
+    "image": "/final_pic/hub_layers/ground_prop_68.webp",
+    "worldRatio": 0.6489976022023242,
+    "floorRatio": 0.5730416372618208,
+    "nativeWidth": 32,
+    "nativeHeight": 26
+  },
+  {
+    "id": "prop-69",
+    "image": "/final_pic/hub_layers/ground_prop_69.webp",
+    "worldRatio": 0.6537561417437742,
+    "floorRatio": 0.8348623853211009,
+    "nativeWidth": 112,
+    "nativeHeight": 44
+  },
+  {
+    "id": "prop-70",
+    "image": "/final_pic/hub_layers/ground_prop_70.webp",
+    "worldRatio": 0.6615513537269713,
+    "floorRatio": 0.6774876499647142,
+    "nativeWidth": 50,
+    "nativeHeight": 44
+  },
+  {
+    "id": "prop-71",
+    "image": "/final_pic/hub_layers/ground_prop_71.webp",
+    "worldRatio": 0.701835604025818,
+    "floorRatio": 0.8038108680310515,
+    "nativeWidth": 63,
+    "nativeHeight": 28
+  },
+  {
+    "id": "prop-72",
+    "image": "/final_pic/hub_layers/ground_prop_72.webp",
+    "worldRatio": 0.7209173412057516,
+    "floorRatio": 0.8383909668313339,
+    "nativeWidth": 35,
+    "nativeHeight": 28
+  },
+  {
+    "id": "prop-73",
+    "image": "/final_pic/hub_layers/ground_prop_73.webp",
+    "worldRatio": 0.7236480557702415,
+    "floorRatio": 0.5596330275229358,
+    "nativeWidth": 99,
+    "nativeHeight": 65
+  },
+  {
+    "id": "prop-74",
+    "image": "/final_pic/hub_layers/ground_prop_74.webp",
+    "worldRatio": 0.7285392412511444,
+    "floorRatio": 0.8016937191249118,
+    "nativeWidth": 37,
+    "nativeHeight": 28
+  },
+  {
+    "id": "prop-75",
+    "image": "/final_pic/hub_layers/ground_prop_75.webp",
+    "worldRatio": 0.7301775845381756,
+    "floorRatio": 0.6414961185603387,
+    "nativeWidth": 26,
+    "nativeHeight": 45
+  },
+  {
+    "id": "prop-76",
+    "image": "/final_pic/hub_layers/ground_prop_76.webp",
+    "worldRatio": 0.7312099240908215,
+    "floorRatio": 0.5786873676781934,
+    "nativeWidth": 27,
+    "nativeHeight": 76
+  },
+  {
+    "id": "prop-77",
+    "image": "/final_pic/hub_layers/ground_prop_77.webp",
+    "worldRatio": 0.7333360846113375,
+    "floorRatio": 0.7805222300635145,
+    "nativeWidth": 68,
+    "nativeHeight": 80
+  },
+  {
+    "id": "prop-78",
+    "image": "/final_pic/hub_layers/ground_prop_78.webp",
+    "worldRatio": 0.7359956145033062,
+    "floorRatio": 0.7148906139731828,
+    "nativeWidth": 42,
+    "nativeHeight": 67
+  },
+  {
+    "id": "prop-79",
+    "image": "/final_pic/hub_layers/ground_prop_79.webp",
+    "worldRatio": 0.7405910960981952,
+    "floorRatio": 0.5758645024700071,
+    "nativeWidth": 62,
+    "nativeHeight": 68
+  },
+  {
+    "id": "prop-80",
+    "image": "/final_pic/hub_layers/ground_prop_80.webp",
+    "worldRatio": 0.7455916444123301,
+    "floorRatio": 0.7734650670430487,
+    "nativeWidth": 59,
+    "nativeHeight": 70
+  },
+  {
+    "id": "prop-81",
+    "image": "/final_pic/hub_layers/ground_prop_81.webp",
+    "worldRatio": 0.746166797722817,
+    "floorRatio": 0.8115737473535639,
+    "nativeWidth": 50,
+    "nativeHeight": 28
+  },
+  {
+    "id": "prop-82",
+    "image": "/final_pic/hub_layers/ground_prop_82.webp",
+    "worldRatio": 0.7505066449749984,
+    "floorRatio": 0.570924488355681,
+    "nativeWidth": 37,
+    "nativeHeight": 59
+  },
+  {
+    "id": "prop-83",
+    "image": "/final_pic/hub_layers/ground_prop_83.webp",
+    "worldRatio": 0.7507011576114655,
+    "floorRatio": 0.8059280169371913,
+    "nativeWidth": 35,
+    "nativeHeight": 51
+  },
+  {
+    "id": "prop-84",
+    "image": "/final_pic/hub_layers/ground_prop_84.webp",
+    "worldRatio": 0.7523016928386799,
+    "floorRatio": 0.547635850388144,
+    "nativeWidth": 52,
+    "nativeHeight": 32
+  },
+  {
+    "id": "prop-85",
+    "image": "/final_pic/hub_layers/ground_prop_85.webp",
+    "worldRatio": 0.7523275628710882,
+    "floorRatio": 0.781227946365561,
+    "nativeWidth": 61,
+    "nativeHeight": 34
+  },
+  {
+    "id": "prop-86",
+    "image": "/final_pic/hub_layers/ground_prop_86.webp",
+    "worldRatio": 0.7580415412087105,
+    "floorRatio": 0.8101623147494708,
+    "nativeWidth": 37,
+    "nativeHeight": 46
+  },
+  {
+    "id": "prop-87",
+    "image": "/final_pic/hub_layers/ground_prop_87.webp",
+    "worldRatio": 0.7632933291617656,
+    "floorRatio": 0.5483415666901905,
+    "nativeWidth": 28,
+    "nativeHeight": 49
+  },
+  {
+    "id": "prop-88",
+    "image": "/final_pic/hub_layers/ground_prop_88.webp",
+    "worldRatio": 0.7640994616768698,
+    "floorRatio": 0.6901905434015526,
+    "nativeWidth": 52,
+    "nativeHeight": 36
+  },
+  {
+    "id": "prop-89",
+    "image": "/final_pic/hub_layers/ground_prop_89.webp",
+    "worldRatio": 0.7700084666836,
+    "floorRatio": 0.5666901905434015,
+    "nativeWidth": 33,
+    "nativeHeight": 32
+  },
+  {
+    "id": "prop-90",
+    "image": "/final_pic/hub_layers/ground_prop_90.webp",
+    "worldRatio": 0.7854246166812718,
+    "floorRatio": 0.7671136203246295,
+    "nativeWidth": 41,
+    "nativeHeight": 51
+  },
+  {
+    "id": "prop-91",
+    "image": "/final_pic/hub_layers/ground_prop_91.webp",
+    "worldRatio": 0.7878865798883861,
+    "floorRatio": 0.8221594918842625,
+    "nativeWidth": 31,
+    "nativeHeight": 35
+  },
+  {
+    "id": "prop-92",
+    "image": "/final_pic/hub_layers/ground_prop_92.webp",
+    "worldRatio": 0.7884161478590187,
+    "floorRatio": 0.7720536344389556,
+    "nativeWidth": 53,
+    "nativeHeight": 69
+  },
+  {
+    "id": "prop-93",
+    "image": "/final_pic/hub_layers/ground_prop_93.webp",
+    "worldRatio": 0.7979028118647891,
+    "floorRatio": 0.7769936485532816,
+    "nativeWidth": 55,
+    "nativeHeight": 72
+  },
+  {
+    "id": "prop-94",
+    "image": "/final_pic/hub_layers/ground_prop_94.webp",
+    "worldRatio": 0.799746124002052,
+    "floorRatio": 0.5744530698659139,
+    "nativeWidth": 57,
+    "nativeHeight": 48
+  },
+  {
+    "id": "prop-95",
+    "image": "/final_pic/hub_layers/ground_prop_95.webp",
+    "worldRatio": 0.8018833667296964,
+    "floorRatio": 0.7593507410021172,
+    "nativeWidth": 42,
+    "nativeHeight": 53
+  },
+  {
+    "id": "prop-96",
+    "image": "/final_pic/hub_layers/ground_prop_96.webp",
+    "worldRatio": 0.8176272438062251,
+    "floorRatio": 0.5850388143966125,
+    "nativeWidth": 143,
+    "nativeHeight": 85
+  },
+  {
+    "id": "prop-97",
+    "image": "/final_pic/hub_layers/ground_prop_97.webp",
+    "worldRatio": 0.821608380973476,
+    "floorRatio": 0.8454481298517996,
+    "nativeWidth": 97,
+    "nativeHeight": 39
+  },
+  {
+    "id": "prop-98",
+    "image": "/final_pic/hub_layers/ground_prop_98.webp",
+    "worldRatio": 0.8302122058789573,
+    "floorRatio": 0.5666901905434015,
+    "nativeWidth": 32,
+    "nativeHeight": 31
+  },
+  {
+    "id": "prop-99",
+    "image": "/final_pic/hub_layers/ground_prop_99.webp",
+    "worldRatio": 0.8313425319115524,
+    "floorRatio": 0.7734650670430487,
+    "nativeWidth": 56,
+    "nativeHeight": 71
+  },
+  {
+    "id": "prop-100",
+    "image": "/final_pic/hub_layers/ground_prop_100.webp",
+    "worldRatio": 0.8449492752866785,
+    "floorRatio": 0.771347918136909,
+    "nativeWidth": 52,
+    "nativeHeight": 68
+  },
+  {
+    "id": "prop-101",
+    "image": "/final_pic/hub_layers/ground_prop_101.webp",
+    "worldRatio": 0.8608932351198036,
+    "floorRatio": 0.7649964714184898,
+    "nativeWidth": 34,
+    "nativeHeight": 26
+  },
+  {
+    "id": "prop-102",
+    "image": "/final_pic/hub_layers/ground_prop_102.webp",
+    "worldRatio": 0.8718485122155429,
+    "floorRatio": 0.5483415666901905,
+    "nativeWidth": 63,
+    "nativeHeight": 33
+  },
+  {
+    "id": "prop-103",
+    "image": "/final_pic/hub_layers/ground_prop_103.webp",
+    "worldRatio": 0.8806104510118,
+    "floorRatio": 0.7776993648553282,
+    "nativeWidth": 62,
+    "nativeHeight": 59
+  },
+  {
+    "id": "prop-104",
+    "image": "/final_pic/hub_layers/ground_prop_104.webp",
+    "worldRatio": 0.8806897635581763,
+    "floorRatio": 0.8207480592801694,
+    "nativeWidth": 51,
+    "nativeHeight": 32
+  },
+  {
+    "id": "prop-105",
+    "image": "/final_pic/hub_layers/ground_prop_105.webp",
+    "worldRatio": 0.8808657406788497,
+    "floorRatio": 0.5899788285109386,
+    "nativeWidth": 27,
+    "nativeHeight": 31
+  },
+  {
+    "id": "prop-106",
+    "image": "/final_pic/hub_layers/ground_prop_106.webp",
+    "worldRatio": 0.880948838897181,
+    "floorRatio": 0.5786873676781934,
+    "nativeWidth": 33,
+    "nativeHeight": 92
+  },
+  {
+    "id": "prop-107",
+    "image": "/final_pic/hub_layers/ground_prop_107.webp",
+    "worldRatio": 0.8829691802700335,
+    "floorRatio": 0.681016231474947,
+    "nativeWidth": 28,
+    "nativeHeight": 63
+  },
+  {
+    "id": "prop-108",
+    "image": "/final_pic/hub_layers/ground_prop_108.webp",
+    "worldRatio": 0.885137670577456,
+    "floorRatio": 0.7769936485532816,
+    "nativeWidth": 55,
+    "nativeHeight": 65
+  },
+  {
+    "id": "prop-109",
+    "image": "/final_pic/hub_layers/ground_prop_109.webp",
+    "worldRatio": 0.8888707007935068,
+    "floorRatio": 0.5779816513761468,
+    "nativeWidth": 136,
+    "nativeHeight": 91
+  },
+  {
+    "id": "prop-110",
+    "image": "/final_pic/hub_layers/ground_prop_110.webp",
+    "worldRatio": 0.890229612910725,
+    "floorRatio": 0.8122794636556104,
+    "nativeWidth": 65,
+    "nativeHeight": 36
+  },
+  {
+    "id": "prop-111",
+    "image": "/final_pic/hub_layers/ground_prop_111.webp",
+    "worldRatio": 0.8929974406133552,
+    "floorRatio": 0.565984474241355,
+    "nativeWidth": 39,
+    "nativeHeight": 37
+  }
+]

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { playUiButtonSound } from "@/lib/ui/uiSounds";
 
 /** Space / Enter advances story dialogue (same as clicking the panel). */
 export function useStoryKeyAdvance(onAdvance?: () => void, enabled = true) {
@@ -13,6 +14,7 @@ export function useStoryKeyAdvance(onAdvance?: () => void, enabled = true) {
       const tag = (e.target as HTMLElement | null)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "BUTTON") return;
       e.preventDefault();
+      playUiButtonSound();
       onAdvance();
     };
 

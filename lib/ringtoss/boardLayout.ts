@@ -4,7 +4,7 @@ export const BOARD_HEIGHT = 640;
 export const GRID_COLS = 7;
 export const GRID_ROWS = 4;
 
-/** Shelf surfaces aligned to background.png (gy=1 top → gy=4 front) */
+/** Shelf surfaces aligned to background.webp (gy=1 top → gy=4 front) */
 export const SHELF_ROWS = {
   1: { y: 259, left: 39, right: 681 },
   2: { y: 322, left: 41, right: 700 },
@@ -17,7 +17,14 @@ export type ShelfRow = keyof typeof SHELF_ROWS;
 /** Ring launch point on foreground counter */
 export const LAUNCH_POINT = { x: 360, y: 520 } as const;
 
-export type CellTarget = { gx: number; gy: ShelfRow; points: number; hit: boolean };
+export type CellTarget = {
+  gx: number;
+  gy: ShelfRow;
+  points: number;
+  hit: boolean;
+  /** 本局隨機抽中的紅光目標瓶 */
+  bonus?: boolean;
+};
 
 /** Map design-space coords (720×640) to actual canvas pixels */
 export function toViewport(

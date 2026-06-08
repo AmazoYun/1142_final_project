@@ -32,8 +32,10 @@ import type {
   CollectibleId,
   CollectibleItemDef,
   CollectibleTextOverrides,
+  PendingAcquireAnimation,
   PendingAcquireDialogue,
 } from "@/lib/collectibles/types";
+import { BACKPACK_ITEM_IMAGES } from "@/lib/collectibles/backpackLayout";
 
 const STORAGE_KEY = "night-market-collectibles-v1";
 
@@ -74,6 +76,9 @@ type CollectibleStore = {
   selectedId: CollectibleId | null;
   /** 取得物品後待播放的對話；由 CollectibleDialogueHost 消費 */
   pendingAcquireDialogue: PendingAcquireDialogue | null;
+  /** 取得物品全螢幕動畫；由 CollectibleAcquireOverlay 消費 */
+  pendingAcquireAnimation: PendingAcquireAnimation | null;
+  redeemNotice: string | null;
   textOverrides: CollectibleTextOverrides;
 
   hydrate: () => void;
@@ -92,6 +97,10 @@ type CollectibleStore = {
 
   advanceAcquireDialogue: () => void;
   dismissAcquireDialogue: () => void;
+  dismissAcquireAnimation: () => void;
+  /** Hub 點擊代幣：全螢幕檢視動畫 */
+  showInspectAnimation: (payload: Omit<PendingAcquireAnimation, "mode">) => void;
+  setRedeemNotice: (msg: string | null) => void;
 
   // --- Debug API（僅供背包 Debug 面板與測試） ---
   debugSetAcquired: (id: CollectibleId, acquired: boolean) => void;
@@ -106,6 +115,8 @@ export const useCollectibleStore = create<CollectibleStore>((set, get) => ({
   acquired: [],
   selectedId: null,
   pendingAcquireDialogue: null,
+  pendingAcquireAnimation: null,
+  redeemNotice: null,
   textOverrides: { descriptions: {}, dialogueLines: {} },
 
   hydrate: () => {
@@ -139,17 +150,24 @@ export const useCollectibleStore = create<CollectibleStore>((set, get) => ({
     }
 
     const acquired = [...get().acquired, id];
-    set({ acquired });
-
     const skipDialogue = options?.skipDialogue ?? false;
-    const pending: PendingAcquireDialogue | null =
+    const animation: PendingAcquireAnimation = {
+      itemId: id,
+      itemName: def.name,
+      image: BACKPACK_ITEM_IMAGES[id] ?? def.image,
+      extraMessage: id === "point-card" ? "已解鎖兌獎功能" : undefined,
+      mode: "acquire",
+    };
+    const pendingAcquireDialogue: PendingAcquireDialogue | null =
       !skipDialogue && def.acquireDialogue.length > 0
         ? { itemId: id, lines: def.acquireDialogue, lineIndex: 0 }
         : null;
 
-    if (pending) {
-      set({ pendingAcquireDialogue: pending });
-    }
+    set({
+      acquired,
+      pendingAcquireAnimation: skipDialogue ? null : animation,
+      pendingAcquireDialogue,
+    });
 
     const p = loadPersisted();
     savePersisted({ ...p, acquired });
@@ -173,6 +191,13 @@ export const useCollectibleStore = create<CollectibleStore>((set, get) => ({
   },
 
   dismissAcquireDialogue: () => set({ pendingAcquireDialogue: null }),
+
+  dismissAcquireAnimation: () => set({ pendingAcquireAnimation: null }),
+
+  showInspectAnimation: (payload) =>
+    set({ pendingAcquireAnimation: { ...payload, mode: "inspect" } }),
+
+  setRedeemNotice: (msg) => set({ redeemNotice: msg }),
 
   debugSetAcquired: (id, acquired) => {
     let next = get().acquired;
@@ -217,7 +242,12 @@ export const useCollectibleStore = create<CollectibleStore>((set, get) => ({
   },
 
   debugClearAllAcquired: () => {
-    set({ acquired: [], selectedId: null, pendingAcquireDialogue: null });
+    set({
+      acquired: [],
+      selectedId: null,
+      pendingAcquireDialogue: null,
+      pendingAcquireAnimation: null,
+    });
     const p = loadPersisted();
     savePersisted({ ...p, acquired: [] });
   },

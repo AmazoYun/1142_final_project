@@ -7,6 +7,8 @@ import { getSlotEmptinessScore, isShelfSlotOccupied } from "@/lib/ringtoss/shelf
 
 export const SHELF_ROW_COUNT = 4;
 export const MAX_BOTTLES = 18;
+/** 每局隨機抽出的紅光目標瓶數量 */
+export const BONUS_BOTTLE_COUNT = 5;
 /** 列 = 層架橫列 (gy)；行 = 直欄 (gx) */
 export const MIN_PER_ROW = 2;
 export const MIN_PER_COL = 2;
@@ -259,6 +261,28 @@ export function buildBottleTargets(
   }
 
   return Array.from(selected.values()).map(toTarget);
+}
+
+/** 每局從現有酒瓶中隨機抽出 N 個作為紅光目標，並重置命中狀態 */
+export function assignBonusBottles(
+  targets: CellTarget[],
+  count = BONUS_BOTTLE_COUNT,
+  random: () => number = Math.random,
+): CellTarget[] {
+  if (targets.length === 0) return [];
+
+  const pickCount = Math.min(count, targets.length);
+  const pickedKeys = new Set(
+    shuffle(targets, random)
+      .slice(0, pickCount)
+      .map((t) => cellKey(t.gx, t.gy)),
+  );
+
+  return targets.map((t) => ({
+    ...t,
+    hit: false,
+    bonus: pickedKeys.has(cellKey(t.gx, t.gy)),
+  }));
 }
 
 export function readBackgroundImageData(

@@ -1,7 +1,7 @@
 export const RINGTOSS_ASSET_PATHS = {
-  background: "/ringtoss/background.png",
-  bottle: "/ringtoss/bottles.png",
-  ring: "/ringtoss/rings.png",
+  background: "/ringtoss/background.webp",
+  bottle: "/ringtoss/bottles.webp",
+  ring: "/ringtoss/rings.webp",
 } as const;
 
 export type LoadedRingTossAssets = {

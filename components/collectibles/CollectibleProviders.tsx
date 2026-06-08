@@ -4,8 +4,16 @@
  */
 "use client";
 
+import CollectibleAcquireBlocker from "./CollectibleAcquireBlocker";
+import CollectibleAcquireOverlay from "./CollectibleAcquireOverlay";
 import CollectibleDialogueHost from "./CollectibleDialogueHost";
 
 export default function CollectibleProviders() {
-  return <CollectibleDialogueHost />;
+  return (
+    <>
+      <CollectibleAcquireBlocker />
+      <CollectibleAcquireOverlay />
+      <CollectibleDialogueHost />
+    </>
+  );
 }

@@ -35,7 +35,6 @@ export type StallIntroScript = {
   captions: { id: string; text: string }[];
   dialogues: { id: string; speaker: Speaker; text: string }[];
   enterLabel: string;
-  laterLabel: string;
   howToPlay: string;
 };
 

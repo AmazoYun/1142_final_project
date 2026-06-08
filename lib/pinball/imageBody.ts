@@ -177,6 +177,20 @@ export function collideBallWithSegment(
   };
 }
 
+/** 球心是否貼在障礙物邊緣（供卡住偵測用） */
+export function isBallTouchingImageBody(
+  ballPos: Vec,
+  ballRadius: number,
+  body: ImageBody,
+  placed: PlacedImage,
+): { normal: Vec; contact: Vec } | null {
+  for (const ws of worldEdges(body, placed)) {
+    const res = collideBallWithSegment(ballPos, ballRadius, ws, 1);
+    if (res) return { normal: res.normal, contact: res.contact };
+  }
+  return null;
+}
+
 export function collideBallWithImageBody(
   ballPos: Vec,
   ballVel: Vec,

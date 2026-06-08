@@ -1,12 +1,57 @@
 "use client";
 
-import React, { useEffect, useRef, useSyncExternalStore } from "react";
-import GameHudBar, { GameHudExtraStat } from "@/components/game/GameHudBar";
+import { useRouter } from "next/navigation";
+import React, { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import CatchfishNetHud from "@/components/catchfish/CatchfishNetHud";
+import GameHudBar from "@/components/game/GameHudBar";
+import GameRoundEndModal from "@/components/game/GameRoundEndModal";
 import { awardStallReward } from "@/lib/collectibles/awardStallReward";
+import { returnToMarketAfterRound } from "@/lib/economy/returnToMarket";
+import { finalizeGameRound } from "@/lib/economy/processRoundEnd";
+import { trySpendPlayCost } from "@/lib/economy/playGame";
+import { navigateWithFade } from "@/lib/navigation/navigateWithFade";
+import { usePageFadeIn } from "@/lib/navigation/usePageFadeIn";
+import { reportStallScore } from "@/lib/player/reportStallScore";
+import { useTokenStore } from "@/store/tokenStore";
+import { loadCatchFishAssets, type LoadedCatchFishAssets } from "@/lib/catchfish/assets";
 import {
-  durabilityCostForPoints,
+  catchAnimPose,
+  catchAnimToDisplay,
+  createCatchAnimation,
+  type CatchAnimation,
+} from "@/lib/catchfish/catchAnimation";
+import type { CaughtFishDisplay } from "@/lib/catchfish/caughtDisplay";
+import {
+  createEscapeAnimation,
+  escapeAnimPose,
+  type EscapeAnimation,
+} from "@/lib/catchfish/escapeAnimation";
+import {
+  drawCatchFishBackground,
+  drawFishSprite,
+  drawNetSprite,
+  drawScoopProgressBar,
+} from "@/lib/catchfish/drawSprites";
+import { CatchFishEffects } from "@/lib/catchfish/effects";
+import { createCatchFishSoundFx, type CatchFishSoundFx } from "@/lib/catchfish/sounds";
+import { netArenaMargin, pickFishSpriteIndex } from "@/lib/catchfish/spriteMeta";
+import {
+  catchDurabilityCost,
+  FLEE_DELAY_SEC,
+  FLEE_RADIUS,
+  FLEE_CONTACT_SPEED_MUL,
+  FLEE_SCOOP_FAR_MUL,
+  FLEE_SCOOP_NEAR_MUL,
+  FLEE_SPEED_MUL,
+  SCOOP_STRUGGLE_JITTER,
+  SCOOP_STRUGGLE_SPEED_MUL,
+  holdDrainPerSecond,
+  scoopHoldDuration,
+} from "@/lib/catchfish/scoopMechanics";
+import {
   FISH_SIZE_CONFIG,
   FishSize,
+  INITIAL_NETS,
   randomPointsForSize,
   useGameStore,
 } from "@/store/gameStore";
@@ -78,8 +123,25 @@ type Fish = {
   angle: number; // 朝向（弧度），決定 vx/vy 方向
   turnRate: number; // 每秒轉向量，讓路徑不會完全直線
   size: FishSize;
-  points: number; // 1~10，spawn 時 randomPointsForSize 決定
-  durabilityCost: number; // 撈到時扣幾 % 耐久
+  spriteIndex: number;
+  points: number;
+  spawnAlpha: number;
+  rippleTimer: number;
+  fleeTimer: number;
+  wanderTimer: number;
+  wanderOffset: number;
+  scoopStruggle: number;
+};
+
+type ScoopState = {
+  fishId: number;
+  progress: number;
+  holdSec: number;
+  catchCost: number;
+  points: number;
+  spriteIndex: number;
+  r: number;
+  size: FishSize;
 };
 
 /**
@@ -110,17 +172,25 @@ type Arena = {
  * | baseTurnRate    | 轉向基準 |
  * | turnRateRange   | 轉向隨機浮動 |
  */
+/** 魚池圓形活動半徑（原 80% 再縮小 20% → 64%） */
+const ARENA_RADIUS_SCALE = 0.64;
+
 const GAME_PARAMS = {
-  initialFish: 8,
-  fishCountMax: 12,
-  catchRadius: 32,
-  netRadius: 36,
+  initialFish: 7,
+  fishCountMax: 10,
+  catchRadius: 29,
   followK: 28,
   damping: 7.5,
-  baseFishSpeed: 65,
-  fishSpeedRange: 0.85,
-  baseTurnRate: 0.42,
-  turnRateRange: 0.75,
+  baseFishSpeed: 100,
+  fishSpeedRange: 1.1,
+  baseTurnRate: 0.55,
+  turnRateRange: 1.35,
+  wanderIntervalMin: 0.18,
+  wanderIntervalMax: 0.75,
+  wanderJitter: 2.6,
+  fishSeparationGap: 20,
+  fishSpawnFadeDuration: 0.55,
+  fishRippleInterval: 0.85,
 };
 
 /** 數值夾在 [min, max]，用於限制 dt、座標等 */
@@ -180,6 +250,9 @@ function useGameSelector<T>(selector: (s: ReturnType<typeof useGameStore.getStat
 // =============================================================================
 
 export default function CatchFishGame() {
+  const router = useRouter();
+  usePageFadeIn();
+
   // ----- DOM ref：Canvas 尺寸與繪圖目標 -----
   const containerRef = useRef<HTMLDivElement | null>(null); // 包住 canvas，ResizeObserver 量寬高
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -197,7 +270,27 @@ export default function CatchFishGame() {
   const gameStatsRef = useRef({ nextFishId: 1 });
   /** resetGameRef：Canvas effect 內定義 resetGame，掛到 ref 供按鈕在 effect 外呼叫 */
   const resetGameRef = useRef<() => void>(() => {});
+  const assetsRef = useRef<LoadedCatchFishAssets | null>(null);
+  const catchAnimRef = useRef<CatchAnimation | null>(null);
+  const caughtDisplayRef = useRef<CaughtFishDisplay[]>([]);
+  const scoopRef = useRef<ScoopState | null>(null);
+  const spaceHeldRef = useRef(false);
+  const escapeAnimRef = useRef<EscapeAnimation | null>(null);
+  const effectsRef = useRef(new CatchFishEffects());
+  const onNetBreakEndRef = useRef<() => void>(() => {});
   const catchfishRewardGrantedRef = useRef(false);
+  const largeFishCaughtRef = useRef(0);
+  const totalFishCaughtRef = useRef(0);
+  const sevenFishBonusGivenRef = useRef(false);
+  const roundEndHandledRef = useRef(false);
+  const sfxRef = useRef<CatchFishSoundFx | null>(null);
+
+  const tokens = useTokenStore((s) => s.tokens);
+  const [roundEnd, setRoundEnd] = useState<{ score: number; lotteryYuan: number } | null>(null);
+
+  const [loadedAssets, setLoadedAssets] = useState<LoadedCatchFishAssets | null>(null);
+  const [breakingSlot, setBreakingSlot] = useState<number | null>(null);
+  const [showReplaceToast, setShowReplaceToast] = useState(false);
 
   /**
    * statusRef — 鏡像 store.status，供 RAF 內的 update() 讀取
@@ -212,37 +305,112 @@ export default function CatchFishGame() {
 
   // ----- 從 Zustand 訂閱 → 驅動 JSX 顯示（低頻更新）-----
   const score = useGameSelector((s) => s.score);
-  const bestScore = useGameSelector((s) => s.bestScore);
   const durability = useGameSelector((s) => s.durability);
   const netsRemaining = useGameSelector((s) => s.netsRemaining);
-  const lastCatchPoints = useGameSelector((s) => s.lastCatchPoints);
   const status = useGameSelector((s) => s.status);
-  const netReplacedMessage = useGameSelector((s) => s.netReplacedMessage);
-
   const startGame = useGameStore((s) => s.startGame);
   const resetToIdle = useGameStore((s) => s.resetToIdle);
   const clearNetReplacedMessage = useGameStore((s) => s.clearNetReplacedMessage);
 
-  /** 換網 toast：store 設 netReplacedMessage=true 後，2.5 秒自動關閉 */
+  onNetBreakEndRef.current = () => {
+    setBreakingSlot(null);
+  };
+
   useEffect(() => {
-    if (!netReplacedMessage) return;
-    const t = window.setTimeout(() => clearNetReplacedMessage(), 2500);
+    if (!showReplaceToast) return;
+    const t = window.setTimeout(() => {
+      setShowReplaceToast(false);
+      clearNetReplacedMessage();
+    }, 2200);
     return () => window.clearTimeout(t);
-  }, [netReplacedMessage, clearNetReplacedMessage]);
+  }, [showReplaceToast, clearNetReplacedMessage]);
 
   useEffect(() => {
     if (status !== "gameover") return;
-    if (catchfishRewardGrantedRef.current) return;
-    catchfishRewardGrantedRef.current = true;
-    awardStallReward("catchfish");
+    const finalScore = useGameStore.getState().score;
+    reportStallScore("catchfish", finalScore);
+    if (!roundEndHandledRef.current) {
+      roundEndHandledRef.current = true;
+      const summary = finalizeGameRound(finalScore);
+      setRoundEnd({ score: summary.score, lotteryYuan: summary.lotteryYuan });
+    }
   }, [status]);
+
+  useEffect(() => {
+    document.title = "撈金魚｜無人夜市";
+  }, []);
+
+  useEffect(() => {
+    const sfx = createCatchFishSoundFx();
+    sfxRef.current = sfx;
+    sfx.preload();
+    return () => {
+      sfx.dispose();
+      sfxRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    loadCatchFishAssets()
+      .then((assets) => {
+        if (cancelled) return;
+        assetsRef.current = assets;
+        setLoadedAssets(assets);
+      })
+      .catch(() => {
+        assetsRef.current = null;
+        setLoadedAssets(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  /** 進入頁面後直接開始（玩法說明已在攤位顯示） */
+  useEffect(() => {
+    if (!loadedAssets || status !== "idle") return;
+    catchfishRewardGrantedRef.current = false;
+    largeFishCaughtRef.current = 0;
+    totalFishCaughtRef.current = 0;
+    sevenFishBonusGivenRef.current = false;
+    roundEndHandledRef.current = false;
+    setRoundEnd(null);
+    startGame();
+    resetGameRef.current();
+  }, [loadedAssets, startGame, status]);
 
   /** 開始／再玩：先重置 Zustand，再重置 Canvas 魚群與撈網位置 */
   const handleStart = () => {
     catchfishRewardGrantedRef.current = false;
+    largeFishCaughtRef.current = 0;
+    totalFishCaughtRef.current = 0;
+    sevenFishBonusGivenRef.current = false;
+    roundEndHandledRef.current = false;
+    setRoundEnd(null);
     startGame();
     resetGameRef.current();
   };
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.code === "Space" || e.key === " ") {
+        e.preventDefault();
+        spaceHeldRef.current = true;
+      }
+    };
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.code === "Space" || e.key === " ") {
+        spaceHeldRef.current = false;
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+    };
+  }, []);
 
   // ===========================================================================
   // 區塊 D：Canvas 遊戲迴圈（useEffect 僅在元件掛載時執行一次 []）
@@ -273,7 +441,7 @@ export default function CatchFishGame() {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
       // 圓形遊戲區：以 Canvas 中心為圓心，半徑取短邊一半再留邊距
-      const arenaR = Math.min(w, h) / 2 - 16;
+      const arenaR = (Math.min(w, h) / 2 - 16) * ARENA_RADIUS_SCALE;
       arenaRef.current = { cx: w / 2, cy: h / 2, r: arenaR };
     };
 
@@ -281,19 +449,20 @@ export default function CatchFishGame() {
     const ro = new ResizeObserver(resize);
     if (containerRef.current) ro.observe(containerRef.current);
 
-    // --- D2. 生成單條魚（極座標隨機點 → 落在圓內）---
+    const effects = effectsRef.current;
+
     const spawnFish = () => {
       const arena = arenaRef.current;
       const size = pickFishSize();
       const cfg = FISH_SIZE_CONFIG[size];
       const points = randomPointsForSize(size);
-      const durabilityCost = durabilityCostForPoints(points, size);
       const r = cfg.radius;
 
-      const angle = Math.random() * Math.PI * 2;
-      const dist = Math.random() * Math.max(0, arena.r - r - 8);
-      const x = arena.cx + Math.cos(angle) * dist;
-      const y = arena.cy + Math.sin(angle) * dist;
+      const entryAngle = Math.random() * Math.PI * 2;
+      const spawnDist = Math.max(r + 4, arena.r - r - 6);
+      const x = arena.cx + Math.cos(entryAngle) * spawnDist;
+      const y = arena.cy + Math.sin(entryAngle) * spawnDist;
+      const toCenter = Math.atan2(arena.cy - y, arena.cx - x);
 
       const speedMul = 1 + (Math.random() * 2 - 1) * GAME_PARAMS.fishSpeedRange;
       const speed = GAME_PARAMS.baseFishSpeed * speedMul;
@@ -306,15 +475,134 @@ export default function CatchFishGame() {
         y,
         r,
         speed,
-        angle: Math.random() * Math.PI * 2,
+        angle: toCenter + (Math.random() - 0.5) * 1.2,
         turnRate,
         size,
+        spriteIndex: pickFishSpriteIndex(size),
         points,
-        durabilityCost,
+        spawnAlpha: 0.2,
+        rippleTimer: Math.random() * GAME_PARAMS.fishRippleInterval,
+        fleeTimer: 0,
+        wanderTimer: Math.random() * GAME_PARAMS.wanderIntervalMax,
+        wanderOffset: (Math.random() - 0.5) * GAME_PARAMS.wanderJitter,
+        scoopStruggle: 0,
       });
     };
 
-    // --- D3. 重置場上實體（魚陣列清空、撈網回初始點、補滿 initialFish）---
+    const fishInContact = (fish: Fish, netX: number, netY: number) =>
+      Math.hypot(fish.x - netX, fish.y - netY) < GAME_PARAMS.catchRadius + fish.r * 0.85;
+
+    const tryAwardCatchfishReward = () => {
+      if (catchfishRewardGrantedRef.current) return;
+      if (largeFishCaughtRef.current < 3) return;
+      const reward = awardStallReward("catchfish");
+      if (reward.success) {
+        catchfishRewardGrantedRef.current = true;
+      }
+    };
+
+    const beginCatch = (fish: Fish) => {
+      const previousCaught = caughtDisplayRef.current.map((c) => ({
+        r: c.r,
+        spriteIndex: c.spriteIndex,
+        scaleMul: c.scaleMul,
+      }));
+      const slotIndex = caughtDisplayRef.current.length;
+      catchAnimRef.current = createCatchAnimation(fish, w, h, slotIndex, previousCaught);
+      effects.addSplash(netRef.current.x, netRef.current.y);
+    };
+
+    const showNetBreakNotification = (force = false) => {
+      const state = useGameStore.getState();
+      if (!force && !state.netReplacedMessage) return;
+      const brokenSlot = INITIAL_NETS - state.netsRemaining - 1;
+      setBreakingSlot(Math.max(0, brokenSlot));
+      setShowReplaceToast(true);
+      effects.startNetBreak(netRef.current.x, netRef.current.y);
+      sfxRef.current?.playNetBreak();
+    };
+
+    const triggerNetBreak = () => {
+      const netsBefore = useGameStore.getState().netsRemaining;
+      useGameStore.getState().breakNet();
+      if (netsBefore <= 1) {
+        effects.startNetBreak(netRef.current.x, netRef.current.y);
+        sfxRef.current?.playNetBreak();
+        return;
+      }
+      showNetBreakNotification();
+    };
+
+    const triggerFishEscape = (fish: Fish) => {
+      const away = Math.atan2(
+        fish.y - netRef.current.y,
+        fish.x - netRef.current.x,
+      );
+      fishRef.current = fishRef.current.filter((f) => f.id !== fish.id);
+      escapeAnimRef.current = createEscapeAnimation({ ...fish, angle: away });
+      scoopRef.current = null;
+      sfxRef.current?.playFishMiss();
+      effects.addSplash(fish.x, fish.y, 10);
+    };
+
+    const finishCatchAnimation = () => {
+      const anim = catchAnimRef.current;
+      if (!anim) return;
+
+      caughtDisplayRef.current.push(catchAnimToDisplay(anim));
+      replenishFish();
+      catchAnimRef.current = null;
+    };
+
+    const updateCatchAnimation = (dt: number) => {
+      const anim = catchAnimRef.current;
+      if (!anim) return;
+      anim.progress += dt / anim.duration;
+      if (anim.progress >= 1) finishCatchAnimation();
+    };
+
+    const updateEscapeAnimation = (dt: number) => {
+      const anim = escapeAnimRef.current;
+      if (!anim) return;
+      anim.progress += dt / anim.duration;
+      anim.x += anim.vx * dt;
+      anim.y += anim.vy * dt;
+      if (anim.progress >= 1) escapeAnimRef.current = null;
+    };
+
+    const completeScoop = (fish: Fish, scoop: ScoopState) => {
+      const before = useGameStore.getState();
+      fishRef.current = fishRef.current.filter((f) => f.id !== fish.id);
+      scoopRef.current = null;
+      useGameStore.getState().onFishCaught(scoop.points, scoop.catchCost);
+
+      totalFishCaughtRef.current += 1;
+      if (scoop.size === "large") {
+        largeFishCaughtRef.current += 1;
+        tryAwardCatchfishReward();
+      }
+
+      let bonus = 0;
+      if (largeFishCaughtRef.current === 3) bonus += 100;
+      if (totalFishCaughtRef.current > 7 && !sevenFishBonusGivenRef.current) {
+        bonus += 50;
+        sevenFishBonusGivenRef.current = true;
+      }
+      if (bonus > 0) {
+        useGameStore.setState((s) => ({
+          score: s.score + bonus,
+          bestScore: Math.max(s.bestScore, s.score + bonus),
+        }));
+      }
+
+      const after = useGameStore.getState();
+      if (after.netReplacedMessage || after.netsRemaining < before.netsRemaining) {
+        showNetBreakNotification(true);
+      }
+      sfxRef.current?.playCaught();
+      beginCatch(fish);
+    };
+
     const resetGame = () => {
       const arena = arenaRef.current;
       const net = netRef.current;
@@ -326,124 +614,311 @@ export default function CatchFishGame() {
       net.targetY = net.y;
 
       fishRef.current = [];
+      caughtDisplayRef.current = [];
+      catchAnimRef.current = null;
+      scoopRef.current = null;
+      escapeAnimRef.current = null;
+      spaceHeldRef.current = false;
+      sfxRef.current?.stopCatching();
+      effects.ripples = [];
+      effects.splashes = [];
+      effects.netBreak = null;
       gameStatsRef.current.nextFishId = 1;
+      largeFishCaughtRef.current = 0;
+      totalFishCaughtRef.current = 0;
+      sevenFishBonusGivenRef.current = false;
+      setBreakingSlot(null);
+      setShowReplaceToast(false);
       for (let i = 0; i < GAME_PARAMS.initialFish; i++) spawnFish();
+    };
+
+    const replenishFish = () => {
+      const target = clamp(
+        GAME_PARAMS.initialFish + Math.floor(useGameStore.getState().score / 50),
+        5,
+        GAME_PARAMS.fishCountMax,
+      );
+      while (fishRef.current.length < target && statusRef.current === "playing") {
+        spawnFish();
+      }
     };
 
     resetGameRef.current = resetGame;
     resetGame();
 
-    // --- D4. 繪圖函式（每幀呼叫，無動畫、無粒子）---
+    const netMargin = netArenaMargin(GAME_PARAMS.catchRadius);
 
-    /** drawArena：灰色圓池 + 描邊，對應原型中央圓形遊戲區 */
-    const drawArena = () => {
-      const { cx, cy, r } = arenaRef.current;
-      ctx.fillStyle = "#d4d4d4";
-      ctx.beginPath();
-      ctx.arc(cx, cy, r, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.strokeStyle = "#a3a3a3";
-      ctx.lineWidth = 2;
-      ctx.stroke();
-    };
-
-    /** drawFish：橢圓身體 + 三角形尾巴；深淺灰區分大中小 */
-    const drawFish = (fish: Fish) => {
-      const gray =
-        fish.size === "large" ? "#525252" : fish.size === "medium" ? "#737373" : "#a3a3a3";
-
-      ctx.save();
-      ctx.translate(fish.x, fish.y);
-      ctx.rotate(fish.angle);
-      ctx.fillStyle = gray;
-      ctx.strokeStyle = "#404040";
-      ctx.lineWidth = 1;
-
-      ctx.beginPath();
-      ctx.ellipse(0, 0, fish.r * 1.5, fish.r, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-
-      ctx.beginPath();
-      ctx.moveTo(-fish.r * 1.4, 0);
-      ctx.lineTo(-fish.r * 1.85, -fish.r * 0.5);
-      ctx.lineTo(-fish.r * 1.85, fish.r * 0.5);
-      ctx.closePath();
-      ctx.fill();
-
-      ctx.restore();
-    };
-
-    /**
-     * drawNet：撈網視覺
-     * - 棕色直線：桿
-     * - 上半弧：網口（開口朝上）
-     * - 半透明實心圓：catchRadius 除錯用，實際碰撞在 update 用同半徑計算
-     */
-    const drawNet = () => {
-      const net = netRef.current;
-      const { x, y } = net;
-      const nr = GAME_PARAMS.netRadius;
-
-      ctx.strokeStyle = "#78350f";
-      ctx.lineWidth = 5;
-      ctx.beginPath();
-      ctx.moveTo(x, y + nr * 0.1);
-      ctx.lineTo(x, y + nr * 1.7);
-      ctx.stroke();
-
-      ctx.strokeStyle = "#57534e";
-      ctx.lineWidth = 2.5;
-      ctx.beginPath();
-      ctx.arc(x, y, nr, Math.PI, Math.PI * 2);
-      ctx.stroke();
-
-      ctx.globalAlpha = 0.15;
-      ctx.fillStyle = "#fff";
-      ctx.beginPath();
-      ctx.arc(x, y, GAME_PARAMS.catchRadius, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.globalAlpha = 1;
-    };
-
-    /**
-     * moveFish — 更新單條魚的位置
-     * 1. angle 依 turnRate 轉向
-     * 2. 沿 angle 方向以 speed 移動
-     * 3. 若超出圓周：貼回邊界並依法線反射（鏡面反彈）
-     */
-    const moveFish = (fish: Fish, dt: number) => {
+    const clampFishInArena = (fish: Fish, bounce = false) => {
       const arena = arenaRef.current;
-      fish.angle += fish.turnRate * dt;
-      fish.x += Math.cos(fish.angle) * fish.speed * dt;
-      fish.y += Math.sin(fish.angle) * fish.speed * dt;
-
       const dx = fish.x - arena.cx;
       const dy = fish.y - arena.cy;
       const dist = Math.hypot(dx, dy);
       const maxDist = arena.r - fish.r;
-      if (dist > maxDist && dist > 0) {
-        const nx = dx / dist;
-        const ny = dy / dist;
-        fish.x = arena.cx + nx * maxDist;
-        fish.y = arena.cy + ny * maxDist;
-        const vx = Math.cos(fish.angle) * fish.speed;
-        const vy = Math.sin(fish.angle) * fish.speed;
-        const dot = vx * nx + vy * ny;
-        const rvx = vx - 2 * dot * nx;
-        const rvy = vy - 2 * dot * ny;
-        fish.angle = Math.atan2(rvy, rvx);
+      if (dist <= maxDist || dist === 0) return;
+
+      const nx = dx / dist;
+      const ny = dy / dist;
+      fish.x = arena.cx + nx * maxDist;
+      fish.y = arena.cy + ny * maxDist;
+
+      if (!bounce) return;
+
+      const vx = Math.cos(fish.angle) * fish.speed;
+      const vy = Math.sin(fish.angle) * fish.speed;
+      const dot = vx * nx + vy * ny;
+      const rvx = vx - 2 * dot * nx;
+      const rvy = vy - 2 * dot * ny;
+      fish.angle = Math.atan2(rvy, rvx);
+    };
+
+    const separateFish = () => {
+      const fish = fishRef.current;
+      const gap = GAME_PARAMS.fishSeparationGap;
+      for (let i = 0; i < fish.length; i += 1) {
+        for (let j = i + 1; j < fish.length; j += 1) {
+          const a = fish[i];
+          const b = fish[j];
+          const dx = b.x - a.x;
+          const dy = b.y - a.y;
+          const dist = Math.hypot(dx, dy) || 1;
+          const minDist = a.r + b.r + gap;
+          if (dist >= minDist) continue;
+          const push = (minDist - dist) * 0.5;
+          const nx = dx / dist;
+          const ny = dy / dist;
+          a.x -= nx * push;
+          a.y -= ny * push;
+          b.x += nx * push;
+          b.y += ny * push;
+        }
+      }
+      for (const f of fish) clampFishInArena(f);
+    };
+
+    const refreshFishWander = (fish: Fish) => {
+      fish.wanderTimer =
+        GAME_PARAMS.wanderIntervalMin +
+        Math.random() * (GAME_PARAMS.wanderIntervalMax - GAME_PARAMS.wanderIntervalMin);
+      fish.wanderOffset = (Math.random() - 0.5) * GAME_PARAMS.wanderJitter;
+      fish.turnRate =
+        (Math.random() * 2 - 1) * GAME_PARAMS.turnRateRange * GAME_PARAMS.baseTurnRate;
+    };
+
+    const fleeSpeedMul = (fish: Fish, netX: number, netY: number, urgent: boolean) => {
+      if (fishInContact(fish, netX, netY)) return FLEE_CONTACT_SPEED_MUL;
+      if (urgent) return FLEE_SCOOP_NEAR_MUL;
+      return FLEE_SPEED_MUL;
+    };
+
+    const steerFishAway = (
+      fish: Fish,
+      netX: number,
+      netY: number,
+      dt: number,
+      turnSharpness: number,
+    ) => {
+      const away = Math.atan2(fish.y - netY, fish.x - netX);
+      let diff = away - fish.angle;
+      while (diff > Math.PI) diff -= Math.PI * 2;
+      while (diff < -Math.PI) diff += Math.PI * 2;
+      fish.angle += diff * Math.min(1, dt * turnSharpness);
+    };
+
+    const applyFishSwim = (fish: Fish, dt: number, speedMul = 1) => {
+      fish.wanderTimer -= dt;
+      if (fish.wanderTimer <= 0) refreshFishWander(fish);
+
+      const jitter = (Math.random() - 0.5) * 1.15 * dt;
+      fish.angle += (fish.turnRate + fish.wanderOffset * 0.45 + jitter) * dt;
+      fish.x += Math.cos(fish.angle) * fish.speed * speedMul * dt;
+      fish.y += Math.sin(fish.angle) * fish.speed * speedMul * dt;
+    };
+
+    const applyFishFlee = (
+      fish: Fish,
+      netX: number,
+      netY: number,
+      dt: number,
+      urgent: boolean,
+    ): boolean => {
+      const d = Math.hypot(fish.x - netX, fish.y - netY);
+      if (d > FLEE_RADIUS) {
+        fish.fleeTimer = 0;
+        return false;
+      }
+
+      fish.fleeTimer += dt;
+      if (!urgent && fish.fleeTimer < FLEE_DELAY_SEC) return false;
+
+      const speedMul = fleeSpeedMul(fish, netX, netY, urgent);
+      steerFishAway(fish, netX, netY, dt, urgent ? 14 : 7);
+      fish.x += Math.cos(fish.angle) * fish.speed * speedMul * dt;
+      fish.y += Math.sin(fish.angle) * fish.speed * speedMul * dt;
+      applyFishSwim(fish, dt, urgent ? 0.4 : 0.2);
+      clampFishInArena(fish, true);
+      return true;
+    };
+
+    const moveScoopTarget = (fish: Fish, dt: number) => {
+      fish.scoopStruggle += dt;
+      const wobble = fish.scoopStruggle;
+      const struggleAngle =
+        fish.angle + Math.sin(wobble * 14) * 0.55 + Math.cos(wobble * 9) * 0.35;
+      fish.x += Math.cos(struggleAngle) * fish.speed * SCOOP_STRUGGLE_SPEED_MUL * dt;
+      fish.y += Math.sin(struggleAngle) * fish.speed * SCOOP_STRUGGLE_SPEED_MUL * dt;
+      fish.x += (Math.random() - 0.5) * SCOOP_STRUGGLE_JITTER * dt;
+      fish.y += (Math.random() - 0.5) * SCOOP_STRUGGLE_JITTER * dt;
+      clampFishInArena(fish, false);
+    };
+
+    /** 按住空白鍵時，非目標魚快速逃離（無顫抖抖動，僅直線加速逃離） */
+    const moveFishFleeWhileScooping = (fish: Fish, netX: number, netY: number, dt: number) => {
+      const d = Math.hypot(fish.x - netX, fish.y - netY);
+      const inContact = fishInContact(fish, netX, netY);
+      const speedMul = inContact
+        ? FLEE_CONTACT_SPEED_MUL
+        : d <= FLEE_RADIUS
+          ? FLEE_SCOOP_NEAR_MUL
+          : FLEE_SCOOP_FAR_MUL;
+
+      steerFishAway(fish, netX, netY, dt, 16);
+      fish.x += Math.cos(fish.angle) * fish.speed * speedMul * dt;
+      fish.y += Math.sin(fish.angle) * fish.speed * speedMul * dt;
+      clampFishInArena(fish, true);
+    };
+
+    const moveFish = (fish: Fish, netX: number, netY: number, dt: number) => {
+      fish.spawnAlpha = Math.min(1, fish.spawnAlpha + dt / GAME_PARAMS.fishSpawnFadeDuration);
+      fish.rippleTimer += dt;
+      if (fish.rippleTimer >= GAME_PARAMS.fishRippleInterval) {
+        fish.rippleTimer = 0;
+        effects.addRipple(fish.x, fish.y, fish.r * 1.8);
+      }
+
+      const scoop = scoopRef.current;
+      const isScoopTarget = scoop?.fishId === fish.id;
+      const spaceHeld = spaceHeldRef.current;
+
+      if (isScoopTarget) {
+        moveScoopTarget(fish, dt);
+        return;
+      }
+
+      if (spaceHeld) {
+        moveFishFleeWhileScooping(fish, netX, netY, dt);
+        return;
+      }
+
+      const fled = applyFishFlee(fish, netX, netY, dt, scoop !== null);
+      if (!fled) {
+        applyFishSwim(fish, dt);
+        clampFishInArena(fish, true);
       }
     };
 
-    // --- D5. 物理與碰撞（僅 status === playing 時執行）---
+    const updateScoop = (netX: number, netY: number, dt: number) => {
+      if (catchAnimRef.current || effects.isNetBreaking() || escapeAnimRef.current) {
+        if (scoopRef.current) {
+          scoopRef.current = null;
+          sfxRef.current?.stopCatching();
+        }
+        return;
+      }
+
+      const scoop = scoopRef.current;
+      const spaceHeld = spaceHeldRef.current;
+
+      if (!spaceHeld) {
+        if (scoopRef.current) {
+          scoopRef.current = null;
+          sfxRef.current?.stopCatching();
+        }
+        return;
+      }
+
+      let targetFish: Fish | undefined;
+      if (scoop) {
+        targetFish = fishRef.current.find((f) => f.id === scoop.fishId);
+        if (!targetFish || !fishInContact(targetFish, netX, netY)) {
+          scoopRef.current = null;
+          sfxRef.current?.stopCatching();
+          return;
+        }
+      } else {
+        let best: Fish | undefined;
+        let bestD = Infinity;
+        for (const fish of fishRef.current) {
+          if (!fishInContact(fish, netX, netY)) continue;
+          const d = Math.hypot(fish.x - netX, fish.y - netY);
+          if (d < bestD) {
+            bestD = d;
+            best = fish;
+          }
+        }
+        if (!best) return;
+        targetFish = best;
+        scoopRef.current = {
+          fishId: best.id,
+          progress: 0,
+          holdSec: scoopHoldDuration(best.size),
+          catchCost: catchDurabilityCost(best.size),
+          points: best.points,
+          spriteIndex: best.spriteIndex,
+          r: best.r,
+          size: best.size,
+        };
+        sfxRef.current?.startCatching();
+        effects.addSplash(netX, netY, 8);
+      }
+
+      const active = scoopRef.current;
+      if (!active || !targetFish) return;
+
+      active.progress = Math.min(1, active.progress + dt / active.holdSec);
+      const holdDrain = holdDrainPerSecond(active.size) * dt;
+      const durabilityBeforeDrain = useGameStore.getState().durability;
+      const cappedDrain =
+        active.progress >= 1
+          ? Math.min(holdDrain, Math.max(0, durabilityBeforeDrain - active.catchCost))
+          : holdDrain;
+      useGameStore.getState().drainDurability(cappedDrain);
+
+      const durability = useGameStore.getState().durability;
+
+      if (active.progress >= 1) {
+        // 允許些微浮點誤差；剛好夠扣撈到耐久時仍算成功（大魚 25%→0%）
+        if (durability + 0.5 < active.catchCost) {
+          triggerFishEscape(targetFish);
+          return;
+        }
+        completeScoop(targetFish, active);
+        return;
+      }
+
+      // 按住期間耐久歸零且尚未撈成功 → 掙脫並破網
+      if (durability <= 0) {
+        triggerFishEscape(targetFish);
+        triggerNetBreak();
+      }
+    };
+
     const update = (dt: number) => {
+      const wasNetBreaking = effects.isNetBreaking();
+      effects.update(dt);
+      updateEscapeAnimation(dt);
+      updateCatchAnimation(dt);
+      if (wasNetBreaking && !effects.isNetBreaking()) {
+        onNetBreakEndRef.current();
+      }
+
       if (statusRef.current !== "playing") return;
 
       const arena = arenaRef.current;
       const net = netRef.current;
 
-      // (1) 撈網慣性：spring-damper 模型追 targetX/Y，再 clamp 在圓內
+      const prevNetX = net.x;
+      const prevNetY = net.y;
+
       const ax = (net.targetX - net.x) * GAME_PARAMS.followK;
       const ay = (net.targetY - net.y) * GAME_PARAMS.followK;
       net.vx += ax * dt;
@@ -454,55 +929,98 @@ export default function CatchFishGame() {
       net.x += net.vx * dt;
       net.y += net.vy * dt;
 
-      const clamped = clampToCircle(net.x, net.y, arena, GAME_PARAMS.netRadius);
+      const clamped = clampToCircle(net.x, net.y, arena, netMargin);
       net.x = clamped.x;
       net.y = clamped.y;
 
-      // (2) 所有魚移動
-      for (const fish of fishRef.current) moveFish(fish, dt);
+      const instantSpeed = Math.hypot(net.x - prevNetX, net.y - prevNetY) / dt;
+      sfxRef.current?.maybePlayNetOnMove(instantSpeed);
 
-      // (3) 碰撞撈取：圓形距離判定，多條可同幀撈到
-      const caught: Fish[] = [];
-      const remaining: Fish[] = [];
-      for (const fish of fishRef.current) {
-        const d = Math.hypot(fish.x - net.x, fish.y - net.y);
-        if (d < GAME_PARAMS.catchRadius + fish.r * 0.5) {
-          caught.push(fish);
-        } else {
-          remaining.push(fish);
-        }
-      }
-
-      if (caught.length > 0) {
-        fishRef.current = remaining;
-        for (const fish of caught) {
-          // 直接 getState() 呼叫，不經 React，避免在 RAF 內觸發額外渲染排程
-          useGameStore.getState().onFishCaught(fish.points, fish.durabilityCost);
-          if (statusRef.current !== "playing") break; // gameover 後不再處理後續魚
-        }
-        // (4) 補魚：分數越高 target 略增，不超過 fishCountMax
-        const target = clamp(
-          GAME_PARAMS.initialFish + Math.floor(useGameStore.getState().score / 50),
-          6,
-          GAME_PARAMS.fishCountMax
-        );
-        while (fishRef.current.length < target && statusRef.current === "playing") {
-          spawnFish();
-        }
-      }
+      for (const fish of fishRef.current) moveFish(fish, net.x, net.y, dt);
+      separateFish();
+      updateScoop(net.x, net.y, dt);
     };
 
-    // --- D6. 主迴圈：算 dt → 畫 → 更新 → 下一幀 ---
     const render = (now: number) => {
-      const dt = clamp((now - lastT) / 1000, 0, 0.033); // 上限 33ms 防卡頓後瞬移
+      const dt = clamp((now - lastT) / 1000, 0, 0.033);
       lastT = now;
 
       ctx.clearRect(0, 0, w, h);
-      drawArena();
-      drawNet();
-      for (const fish of fishRef.current) drawFish(fish);
-      update(dt);
+      drawCatchFishBackground(ctx, assetsRef.current, w, h);
+      effects.drawRipples(ctx);
 
+      const netBreak = effects.netBreak;
+      const shakeX = netBreak
+        ? Math.sin(netBreak.progress * Math.PI * 16) * (1 - netBreak.progress) * 12
+        : 0;
+
+      drawNetSprite(
+        ctx,
+        assetsRef.current,
+        netRef.current.x,
+        netRef.current.y,
+        GAME_PARAMS.catchRadius,
+        { shakeX },
+      );
+
+      const scoop = scoopRef.current;
+      const shakeT = now * 0.001;
+
+      for (const fish of fishRef.current) {
+        const isScoopTarget = scoop?.fishId === fish.id;
+        const shakeX = isScoopTarget
+          ? Math.sin(shakeT * 52) * 6 + Math.sin(shakeT * 81) * 2.5
+          : 0;
+        const shakeY = isScoopTarget
+          ? Math.cos(shakeT * 47) * 5 + Math.cos(shakeT * 73) * 2
+          : 0;
+
+        drawFishSprite(ctx, assetsRef.current, {
+          ...fish,
+          alpha: fish.spawnAlpha,
+          shakeX,
+          shakeY,
+        });
+      }
+
+      if (scoop) {
+        const fish = fishRef.current.find((f) => f.id === scoop.fishId);
+        if (fish) drawScoopProgressBar(ctx, fish.x, fish.y, fish.r, scoop.progress);
+      }
+
+      for (const caught of caughtDisplayRef.current) {
+        drawFishSprite(ctx, assetsRef.current, caught);
+      }
+
+      const catchAnim = catchAnimRef.current;
+      if (catchAnim) {
+        const pose = catchAnimPose(catchAnim);
+        drawFishSprite(ctx, assetsRef.current, {
+          x: pose.x,
+          y: pose.y,
+          angle: pose.angle,
+          r: catchAnim.r,
+          spriteIndex: catchAnim.spriteIndex,
+          scaleMul: pose.scale,
+        });
+      }
+
+      const escapeAnim = escapeAnimRef.current;
+      if (escapeAnim) {
+        const pose = escapeAnimPose(escapeAnim);
+        drawFishSprite(ctx, assetsRef.current, {
+          x: pose.x,
+          y: pose.y,
+          angle: pose.angle,
+          r: escapeAnim.r,
+          spriteIndex: escapeAnim.spriteIndex,
+          scaleMul: pose.scaleMul,
+          alpha: pose.alpha,
+        });
+      }
+
+      effects.drawOverlays(ctx);
+      update(dt);
       raf = requestAnimationFrame(render);
     };
 
@@ -526,138 +1044,61 @@ export default function CatchFishGame() {
     const rect = canvas.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
-    const clamped = clampToCircle(x, y, arenaRef.current, GAME_PARAMS.netRadius);
+    const clamped = clampToCircle(x, y, arenaRef.current, netArenaMargin(GAME_PARAMS.catchRadius));
     netRef.current.targetX = clamped.x;
     netRef.current.targetY = clamped.y;
   };
 
-  const isPlaying = status === "playing";
+
   const isGameOver = status === "gameover";
 
-  // ----- 區塊 F：JSX 版型；子區塊註解標為 F1、F2a…F3，對應原型圖各區域 -----
   return (
-    <div className="min-h-full game-stage-shell">
-      <div className="min-h-full flex flex-col p-4 md:p-6">
-        <div className="flex flex-1 gap-4 md:gap-6 items-stretch min-h-0 justify-center">
-          <aside className="game-couplet-aside hidden md:flex" aria-label="左側文字顯示區">
-            <p
-              className="text-foreground/60 text-sm tracking-widest"
-              style={{ writingMode: "vertical-rl" }}
-            >
-              這是春聯
-            </p>
-          </aside>
+    <div ref={containerRef} className="catchfish-stage">
+      <canvas
+        ref={canvasRef}
+        className="catchfish-stage__canvas"
+        onPointerMove={onPointerMove}
+      />
 
-          <section className="flex flex-col items-center flex-1 max-w-[min(72vh,640px)] min-w-0">
-            <div className="relative w-full aspect-square max-h-[min(72vh,640px)] game-playfield-frame game-playfield-frame--round">
-              <GameHudBar
-                score={score}
-                resource={netsRemaining}
-                resourceLabel="撈網"
-                extra={
-                  <GameHudExtraStat
-                    label="本次"
-                    value={lastCatchPoints > 0 ? lastCatchPoints : "—"}
-                    accent
-                  />
-                }
-              />
-              {/* 圓形裁切：CSS 圓形遮罩；魚的運動邊界由 arenaRef 數學圓控制 */}
-              <div className="absolute inset-0 overflow-hidden bg-[#c8c4bc] shadow-inner">
-                <div ref={containerRef} className="w-full h-full">
-                  <canvas
-                    ref={canvasRef}
-                    className="w-full h-full block touch-none select-none cursor-crosshair"
-                    style={{ touchAction: "none" }}
-                    onPointerMove={onPointerMove}
-                  />
-                </div>
-              </div>
+      <button
+        type="button"
+        className="catchfish-back-link"
+        onClick={() => void navigateWithFade(router, "/market")}
+      >
+        ← 返回夜市
+      </button>
 
-              {/*
-                F2b-1. 撈網耐久顯示（原型右下 🔍 + 100%）
-                資料來源：useGameSelector → durability
-                更新時機：每次 onFishCaught 扣耐久後由 Zustand 觸發 re-render
-              */}
-              <div
-                className="absolute bottom-2 right-2 md:bottom-4 md:right-4 flex items-center gap-1.5 game-overlay-panel px-2.5 py-1.5 text-sm font-medium"
-                aria-live="polite"
-                aria-label={`撈網耐久 ${Math.round(durability)} 百分比`}
-              >
-                <svg
-                  className="w-4 h-4 text-neutral-600 shrink-0"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  aria-hidden
-                >
-                  <circle cx="11" cy="11" r="7" />
-                  <path d="M16 16l5 5" />
-                </svg>
-                <span>{Math.round(durability)}%</span>
-              </div>
+      <GameHudBar
+        score={score}
+        resource={netsRemaining}
+        resourceLabel=""
+        extra={
+          <CatchfishNetHud
+            netsRemaining={netsRemaining}
+            durability={durability}
+            assets={loadedAssets}
+            breakingSlot={breakingSlot}
+          />
+        }
+      />
 
-              {/* F2b-2. 換網 toast：store.netReplacedMessage，2.5 秒後 clearNetReplacedMessage */}
-              {netReplacedMessage && (
-                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 game-overlay-panel px-4 py-2 text-sm">
-                  撈網損壞，已更換新網（剩餘 {netsRemaining} 張）
-                </div>
-              )}
-
-              {/*
-                F2b-3. 開始／結束遮罩
-                - idle：說明 +「開始遊戲」→ handleStart
-                - gameover：顯示 score +「再玩一次」→ handleStart
-                進行中 (playing) 時不顯示，讓玩家看見完整圓池
-              */}
-              {(!isPlaying || isGameOver) && (
-                <div className="absolute inset-0 rounded-full bg-black/25 flex items-center justify-center">
-                  <div
-                    className={`${isGameOver ? "game-score-board-bg" : "game-overlay-panel"} px-6 py-5 max-w-[90%] text-center`}
-                  >
-                    {isGameOver ? (
-                      <>
-                        <p className="text-lg font-semibold mb-1">遊戲結束</p>
-                        <p className="text-sm opacity-90 mb-4">
-                          撈網已用盡。最終得分：{score}
-                        </p>
-                      </>
-                    ) : (
-                      <>
-                        <p className="text-lg font-semibold mb-1">撈金魚</p>
-                        <p className="text-sm opacity-70 mb-4 leading-relaxed">
-                          移動滑鼠控制撈網（帶慣性延遲）。魚僅在圓池內游動；大魚高分但較耗耐久。
-                        </p>
-                      </>
-                    )}
-                    <button type="button" onClick={handleStart} className="game-btn-primary">
-                      {isGameOver ? "再玩一次" : "開始遊戲"}
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <p className="md:hidden mt-2 game-message text-center">
-              小魚 1~3 分 · 中魚 4~7 分 · 大魚 8~10 分 · 備用撈網 {netsRemaining} 張
-            </p>
-          </section>
-
-          <aside className="game-couplet-aside hidden md:flex" aria-label="右側文字顯示區">
-            <p
-              className="text-foreground/60 text-sm tracking-widest"
-              style={{ writingMode: "vertical-rl" }}
-            >
-              這是春聯
-            </p>
-          </aside>
+      {showReplaceToast && (
+        <div className="catchfish-replace-toast" role="status">
+          撈網損壞！更換新網（剩餘 {netsRemaining} 張）
         </div>
+      )}
 
-        <footer className="hidden md:block mt-4 text-center game-message">
-          小魚 1~3 分（耐久 -8% 起）· 中魚 4~7 分 · 大魚 8~10 分 · 最佳紀錄 {bestScore}
-        </footer>
-      </div>
+      <GameRoundEndModal
+        open={isGameOver && roundEnd !== null}
+        score={roundEnd?.score ?? 0}
+        lotteryYuan={roundEnd?.lotteryYuan ?? 0}
+        tokens={tokens}
+        onPlayAgain={() => {
+          if (!trySpendPlayCost()) return;
+          handleStart();
+        }}
+        onReturnToMarket={() => returnToMarketAfterRound(router)}
+      />
     </div>
   );
 }

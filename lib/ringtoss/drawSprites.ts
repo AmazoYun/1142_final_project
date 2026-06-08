@@ -40,6 +40,12 @@ const BOTTLE_GLOW_FILTER = [
   "drop-shadow(0 0 16px rgba(255, 180, 40, 0.28))",
 ].join(" ");
 
+const BONUS_BOTTLE_GLOW_FILTER = [
+  "drop-shadow(0 0 6px rgba(255, 90, 90, 0.98))",
+  "drop-shadow(0 0 11px rgba(255, 45, 45, 0.72))",
+  "drop-shadow(0 0 18px rgba(220, 20, 20, 0.48))",
+].join(" ");
+
 /** Back rows are smaller to match background perspective */
 export function bottleScaleForRow(gy: ShelfRow): number {
   const base =
@@ -130,11 +136,12 @@ function drawBottleImageGlow(
   ctx: CanvasRenderingContext2D,
   assets: LoadedRingTossAssets | null,
   metrics: BottleMetrics,
+  filter = BOTTLE_GLOW_FILTER,
 ) {
   if (!assets?.bottle) return;
 
   ctx.save();
-  ctx.filter = BOTTLE_GLOW_FILTER;
+  ctx.filter = filter;
   ctx.drawImage(
     assets.bottle,
     metrics.drawX,
@@ -143,6 +150,25 @@ function drawBottleImageGlow(
     metrics.drawH,
   );
   ctx.restore();
+}
+
+/** 本局紅光目標瓶（未套中時持續發光） */
+export function drawBonusBottleGlows(
+  ctx: CanvasRenderingContext2D,
+  assets: LoadedRingTossAssets | null,
+  targets: CellTarget[],
+  cw: number,
+  ch: number,
+) {
+  for (const { gx, gy, bonus, hit } of targets) {
+    if (!bonus || hit) continue;
+    drawBottleImageGlow(
+      ctx,
+      assets,
+      bottleMetrics(gx, gy as ShelfRow, cw, ch),
+      BONUS_BOTTLE_GLOW_FILTER,
+    );
+  }
 }
 
 export function drawBottleSprite(

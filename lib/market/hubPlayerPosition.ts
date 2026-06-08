@@ -6,13 +6,13 @@ type Saved = { ratio: number };
 export function saveHubPlayerPosition(playerX: number, worldWidth: number) {
   if (typeof window === "undefined" || worldWidth <= 0) return;
   const payload: Saved = { ratio: playerX / worldWidth };
-  sessionStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
 }
 
 export function readHubPlayerPosition(worldWidth: number): number | null {
   if (typeof window === "undefined" || worldWidth <= 0) return null;
   try {
-    const raw = sessionStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
     const { ratio } = JSON.parse(raw) as Saved;
     if (typeof ratio !== "number" || !Number.isFinite(ratio)) return null;
@@ -24,5 +24,5 @@ export function readHubPlayerPosition(worldWidth: number): number | null {
 
 export function clearHubPlayerPosition() {
   if (typeof window === "undefined") return;
-  sessionStorage.removeItem(STORAGE_KEY);
+  localStorage.removeItem(STORAGE_KEY);
 }

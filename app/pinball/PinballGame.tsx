@@ -1,8 +1,17 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type MouseEvent, type WheelEvent } from "react";
 import GameHudBar from "@/components/game/GameHudBar";
+import GameRoundEndModal from "@/components/game/GameRoundEndModal";
+import PinballMarbleHud from "@/components/pinball/PinballMarbleHud";
 import { awardStallReward } from "@/lib/collectibles/awardStallReward";
+import { hasCollectible } from "@/lib/collectibles/acquireItem";
+import { returnToMarketAfterRound } from "@/lib/economy/returnToMarket";
+import { finalizeGameRound } from "@/lib/economy/processRoundEnd";
+import { trySpendPlayCost } from "@/lib/economy/playGame";
+import { reportStallScore } from "@/lib/player/reportStallScore";
+import { useTokenStore } from "@/store/tokenStore";
 import {
   loadPinballAssets,
   randomPinballColor,
@@ -13,9 +22,11 @@ import {
   drawChargeMeter,
   drawObstacleSprites,
   drawPinballBackground,
+  drawPinballCollisionDebug,
   drawPinballSprite,
 } from "@/lib/pinball/drawSprites";
-import { collideBallWithImageBody } from "@/lib/pinball/imageBody";
+import { collideBallWithImageBody, isBallTouchingImageBody } from "@/lib/pinball/imageBody";
+import { createPinballSoundFx } from "@/lib/pinball/sounds";
 import {
   rotateObstacleByPointer,
   rotateObstacleDegrees,
@@ -28,9 +39,7 @@ import {
   pickObstacleAtPoint,
   pickObstacleHandle,
 } from "@/lib/pinball/editSelection";
-import {
-  migrateToUnifiedLayout,
-} from "@/lib/pinball/unifiedLayout";
+import { migrateToUnifiedLayout } from "@/lib/pinball/unifiedLayout";
 
 import type { LayoutData, Segment, Vec } from "@/lib/pinball/types";
 import {
@@ -43,6 +52,7 @@ import {
   CHANNEL_STACK_MAX,
   CHANNEL_TOP,
   CHANNEL_DIVIDER_X,
+  CHANNEL_DIVIDER_COLLIDE_TOP,
   channelBallY,
   channelLaneCenterX,
   channelLaneFromX,
@@ -52,7 +62,9 @@ import {
   LAUNCH_EXIT,
   launchArcExitTangent,
   launchArcStart,
-  launchDivider,
+  launchDividerFilletCenter,
+  launchDividerVerticalSegment,
+  LAUNCH_DIVIDER_FILLET_R,
   launchRailCenterX,
   launchRailTravelY,
   LAUNCH_RAIL_LEFT,
@@ -73,7 +85,7 @@ type EditDrag =
   | { mode: "scale"; key: string; corner: number; startPointer: Vec; startScale: number }
   | { mode: "rotate"; key: string; startAngle: number; startRotation: number; cx: number; cy: number };
 
-const channelLabels = ["+2球", "+500", "x0.5", "隨機", "-500", "x1.5"] as const;
+const channelLabels = ["+1球", "÷2", "銅幣", "+30", "-10", "×2"] as const;
 const emptyLayout: LayoutData = { version: 2, obstacles: [] };
 
 function clamp(v: number, min: number, max: number) {
@@ -97,26 +109,33 @@ function getChargeTier(ratio: number): ChargeTier {
   return "high";
 }
 
-const MAX_CHARGE_MS = 3000;
+const MAX_CHARGE_MS = 2000;
 const GRAVITY = 0.2 * PHYSICS_SCALE;
-const DRAG = 0.998;
-const BOUNCE = 0.72;
+const DRAG = 0.996;
+const BOUNCE = 0.32;
+const WALL_BOUNCE_DAMP = 0.55;
+const LOW_OBSTACLE_RESTITUTION = 0.28;
+const ROUND_OBSTACLE_RESTITUTION = 0.82;
+const SCORE_OBSTACLE_RESTITUTION = 0.96;
+const TRIANGLE_OBSTACLE_RESTITUTION = 0.76;
+const LOW_BOUNCE_VEL_SCALE = 0.62;
 const LOW_TIER_MAX = 0.34;
 const MID_TIER_MAX = 0.74;
 const HIGH_TIER_MULTIPLIER = 1.2;
+const OBSTACLE_STUCK_MS = 500;
 
 
 export default function PinballGame() {
   const stageRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const canvasSizeRef = useRef({ width: BOARD_WIDTH, height: BOARD_HEIGHT });
-  const audioRef = useRef<AudioContext | null>(null);
   const assetsRef = useRef<LoadedPinballAssets | null>(null);
   const flashesRef = useRef<Flash[]>([]);
   const settledBallsRef = useRef<SettledBall[]>([]);
   const layoutRef = useRef<LayoutData>(emptyLayout);
 
   const ballsRef = useRef(5);
+  const peakBallsRef = useRef(5);
   const stallRewardGrantedRef = useRef(false);
   const scoreRef = useRef(0);
   const comboRef = useRef(1);
@@ -132,6 +151,7 @@ export default function PinballGame() {
   const railSpeedRef = useRef(0.02);
   const settleTimeoutRef = useRef<number | null>(null);
   const stuckFramesRef = useRef(0);
+  const obstacleStuckRef = useRef<{ index: number; since: number; normal: Vec } | null>(null);
   const noticeTimeoutRef = useRef<number | null>(null);
   const noticeClearTimeoutRef = useRef<number | null>(null);
   const roundScoreRef = useRef(0);
@@ -139,8 +159,15 @@ export default function PinballGame() {
   const lowPowerFallbackRef = useRef(false);
   const railDirRef = useRef<1 | -1>(1);
   const launchPowerRef = useRef(0);
+  const gameOverRef = useRef(false);
+  const roundEndHandledRef = useRef(false);
+  const resetGameRef = useRef<() => void>(() => {});
+
+  const router = useRouter();
+  const tokens = useTokenStore((s) => s.tokens);
 
   const [balls, setBalls] = useState(5);
+  const [peakBalls, setPeakBalls] = useState(5);
   const [score, setScore] = useState(0);
   const [displayScore, setDisplayScore] = useState(0);
   const [chargeRatio, setChargeRatio] = useState(0);
@@ -148,7 +175,9 @@ export default function PinballGame() {
   const [rewardText, setRewardText] = useState("");
   const [rewardVisible, setRewardVisible] = useState(false);
   const [chargeTier, setChargeTier] = useState<ChargeTier>("low");
-  const [status, setStatus] = useState("按住空白鍵蓄力，放開發球");
+  const [status, setStatus] = useState("");
+  const [gameOver, setGameOver] = useState(false);
+  const [roundEnd, setRoundEnd] = useState<{ score: number; lotteryYuan: number } | null>(null);
   const [rotateInput, setRotateInput] = useState("15");
   const [layout, setLayout] = useState<LayoutData>(emptyLayout);
   const [editMode, setEditMode] = useState(false);
@@ -229,7 +258,7 @@ export default function PinballGame() {
       setStatus("編輯模式：拖曳移動；拖角點縮放、↻ 旋轉；繪製與碰撞皆用 PNG 不透明邊緣");
     } else {
       setSelectedObstacle("");
-      setStatus("按住空白鍵蓄力，放開發球");
+      setStatus("");
     }
   }, [editMode]);
 
@@ -237,12 +266,19 @@ export default function PinballGame() {
     const loadLayout = async () => {
       try {
         const res = await fetch("/api/pinball-layout");
-        if (!res.ok) return;
+        if (!res.ok) {
+          setStatus("障礙物布局載入失敗");
+          return;
+        }
         const data = migrateToUnifiedLayout(await res.json());
+        if (data.obstacles.length === 0) {
+          setStatus("障礙物布局為空，請還原 data/pinball-layout.saved.json");
+          return;
+        }
         layoutRef.current = data;
         setLayout(data);
       } catch {
-        // keep default layout
+        setStatus("障礙物布局載入失敗");
       }
     };
     loadLayout();
@@ -250,6 +286,10 @@ export default function PinballGame() {
 
   useEffect(() => {
     ballsRef.current = balls;
+    if (balls > peakBallsRef.current) {
+      peakBallsRef.current = balls;
+      setPeakBalls(balls);
+    }
   }, [balls]);
 
   useEffect(() => {
@@ -286,26 +326,8 @@ export default function PinballGame() {
     ball.colorIndex = randomPinballColor();
     ball.radius = ballRadiusForColor(ball.colorIndex);
 
-    const tone = (f: number, ms: number, type: OscillatorType, gain = 0.04) => {
-      try {
-        const ac = audioRef.current ?? new AudioContext();
-        audioRef.current = ac;
-        const o = ac.createOscillator();
-        const g = ac.createGain();
-        o.type = type;
-        o.frequency.value = f;
-        g.gain.value = gain;
-        o.connect(g);
-        g.connect(ac.destination);
-        const now = ac.currentTime;
-        g.gain.setValueAtTime(gain, now);
-        g.gain.exponentialRampToValueAtTime(0.0001, now + ms / 1000);
-        o.start(now);
-        o.stop(now + ms / 1000);
-      } catch {
-        // noop
-      }
-    };
+    const sfx = createPinballSoundFx();
+    sfx.preload();
 
     const flashScore = (dir: "up" | "down") => {
       setScoreFlash(dir);
@@ -353,6 +375,7 @@ export default function PinballGame() {
       setChargeRatio(0);
       setChargeTier("low");
       scoreMultiplierRef.current = 1;
+      obstacleStuckRef.current = null;
     };
 
     const spawnNextBall = () => {
@@ -381,7 +404,7 @@ export default function PinballGame() {
       railSpeedRef.current = 0.016 + p * 0.03;
       ball.vel = { x: 0, y: 0 };
       setStatus(p >= 0.999 ? "滿蓄力發射！本局得分 x1.2" : tier === "high" ? "高力度發射！" : tier === "mid" ? "中力度發射！" : "低力度發射");
-      tone(320 + p * 220, 120, "triangle", 0.05);
+      sfx.playPress();
     };
 
     const collideWalls = () => {
@@ -390,14 +413,17 @@ export default function PinballGame() {
       const top = PLAYFIELD_CEILING + ball.radius;
       if (ball.pos.x < left) {
         ball.pos.x = left;
-        ball.vel.x = Math.abs(ball.vel.x) * BOUNCE;
+        ball.vel.x = Math.abs(ball.vel.x) * BOUNCE * WALL_BOUNCE_DAMP;
+        sfx.playBump();
       } else if (ball.pos.x > right) {
         ball.pos.x = right;
-        ball.vel.x = -Math.abs(ball.vel.x) * BOUNCE;
+        ball.vel.x = -Math.abs(ball.vel.x) * BOUNCE * WALL_BOUNCE_DAMP;
+        sfx.playBump();
       }
       if (ball.pos.y < top) {
         ball.pos.y = top;
-        ball.vel.y = Math.abs(ball.vel.y) * BOUNCE;
+        ball.vel.y = Math.abs(ball.vel.y) * BOUNCE * WALL_BOUNCE_DAMP;
+        sfx.playBump();
       }
     };
 
@@ -413,24 +439,98 @@ export default function PinballGame() {
       ball.pos.x = c.x + n.x * (ball.radius + 1.5);
       ball.pos.y = c.y + n.y * (ball.radius + 1.5);
       ball.vel = reflect(ball.vel, n);
-      ball.vel.x *= 0.86;
-      ball.vel.y *= 0.86;
+      ball.vel.x *= 0.48;
+      ball.vel.y *= 0.48;
       flashesRef.current.push({ x: c.x, y: c.y, r: 24, life: 1, color: "255,220,120" });
-      tone(170, 26, "square", 0.02);
+      sfx.playBump();
       return true;
     };
 
     const collideSeparators = () => {
-      if (ball.pos.y + ball.radius < CHANNEL_TOP) return;
+      if (ball.pos.y + ball.radius < CHANNEL_DIVIDER_COLLIDE_TOP) return;
       for (const x of CHANNEL_DIVIDER_X) {
         if (Math.abs(ball.pos.x - x) < ball.radius + 2) {
           const dir = ball.pos.x < x ? -1 : 1;
           ball.pos.x = x + dir * (ball.radius + 2);
-          ball.vel.x = dir * Math.abs(ball.vel.x) * 0.72;
+          ball.vel.x = dir * Math.abs(ball.vel.x) * 0.38;
           flashesRef.current.push({ x, y: ball.pos.y, r: 14, life: 1, color: "255,210,100" });
-          tone(190, 24, "square", 0.02);
+          sfx.playBump();
         }
       }
+    };
+
+    const collideLaunchDivider = () => {
+      collideSegment(launchDividerVerticalSegment());
+
+      const R = LAUNCH_DIVIDER_FILLET_R;
+      const { x: cx, y: cy } = launchDividerFilletCenter();
+      if (ball.pos.x > LAUNCH_DIVIDER_X + ball.radius) return;
+      if (ball.pos.y > cy + ball.radius) return;
+
+      const dx = ball.pos.x - cx;
+      const dy = ball.pos.y - cy;
+      const dist = Math.hypot(dx, dy);
+      if (dist >= R + ball.radius + 1.5) return;
+      if (dx < 0 || dy > 0) return;
+
+      const n = normalize(dist < 1e-4 ? { x: -1, y: 0 } : { x: dx / dist, y: dy / dist });
+      ball.pos.x = cx + n.x * (R + ball.radius + 1.5);
+      ball.pos.y = cy + n.y * (R + ball.radius + 1.5);
+      ball.vel = reflect(ball.vel, n);
+      ball.vel.x *= 0.5;
+      ball.vel.y *= 0.5;
+      flashesRef.current.push({ x: ball.pos.x, y: ball.pos.y, r: 20, life: 1, color: "255,220,120" });
+      sfx.playBump();
+    };
+
+    const applyObstacleStuckEscape = () => {
+      if (!ball.launched || inRailRef.current || runDoneRef.current) {
+        obstacleStuckRef.current = null;
+        return;
+      }
+      const assets = assetsRef.current;
+      if (!assets) return;
+
+      let touch: { index: number; normal: Vec } | null = null;
+      for (let i = 0; i < layoutRef.current.obstacles.length; i += 1) {
+        const obs = layoutRef.current.obstacles[i];
+        const body = assets.bodies[obs.kind];
+        const placed = { x: obs.x, y: obs.y, rotation: obs.rotation, scale: obs.scale };
+        const hit = isBallTouchingImageBody(ball.pos, ball.radius, body, placed);
+        if (hit) {
+          touch = { index: i, normal: hit.normal };
+          break;
+        }
+      }
+
+      if (!touch) {
+        obstacleStuckRef.current = null;
+        return;
+      }
+
+      const now = performance.now();
+      const prev = obstacleStuckRef.current;
+      if (prev?.index !== touch.index) {
+        obstacleStuckRef.current = { index: touch.index, since: now, normal: touch.normal };
+        return;
+      }
+
+      if (now - prev.since < OBSTACLE_STUCK_MS) return;
+
+      const push = 1.35 * PHYSICS_SCALE;
+      ball.vel.x = touch.normal.x * push + (Math.random() - 0.5) * 0.3 * PHYSICS_SCALE;
+      ball.vel.y = touch.normal.y * push - 0.15 * PHYSICS_SCALE;
+      ball.pos.x += touch.normal.x * ball.radius * 0.4;
+      ball.pos.y += touch.normal.y * ball.radius * 0.4;
+      obstacleStuckRef.current = null;
+      flashesRef.current.push({
+        x: ball.pos.x,
+        y: ball.pos.y,
+        r: 26,
+        life: 1,
+        color: "255,100,100",
+      });
+      sfx.playBump();
     };
 
     const collideImageObstacles = () => {
@@ -440,7 +540,14 @@ export default function PinballGame() {
         for (const obs of layoutRef.current.obstacles) {
           const body = assets.bodies[obs.kind];
           const placed = { x: obs.x, y: obs.y, rotation: obs.rotation, scale: obs.scale };
-          const restitution = obs.score ? 0.96 : obs.kind === "triangle" ? 0.76 : 0.82;
+          const bouncy = obs.kind === "round" || obs.kind === "triangle";
+          const restitution = obs.score
+            ? SCORE_OBSTACLE_RESTITUTION
+            : obs.kind === "round"
+              ? ROUND_OBSTACLE_RESTITUTION
+              : obs.kind === "triangle"
+                ? TRIANGLE_OBSTACLE_RESTITUTION
+                : LOW_OBSTACLE_RESTITUTION;
           const res = collideBallWithImageBody(
             ball.pos,
             ball.vel,
@@ -452,6 +559,10 @@ export default function PinballGame() {
           if (!res.hit) continue;
           ball.pos = res.pos;
           ball.vel = res.vel;
+          if (!bouncy) {
+            ball.vel.x *= LOW_BOUNCE_VEL_SCALE;
+            ball.vel.y *= LOW_BOUNCE_VEL_SCALE;
+          }
           if (pass === 0) {
             flashesRef.current.push({
               x: res.contact.x,
@@ -460,16 +571,11 @@ export default function PinballGame() {
               life: 1,
               color: obs.score ? "120,235,255" : "255,220,120",
             });
-            if (obs.score) {
+            if (obs.kind === "round") {
               lastHitRef.current = performance.now();
-              addRoundPoints(obs.score, "up");
-              tone(500 + comboRef.current * 35, 70, "sine");
-            } else if (obs.kind === "triangle") {
-              addRoundPoints(30, "up");
-              tone(170, 26, "square", 0.02);
-            } else {
-              tone(170, 26, "square", 0.02);
+              addRoundPoints(10, "up");
             }
+            sfx.playBump();
           }
         }
       }
@@ -480,39 +586,36 @@ export default function PinballGame() {
       const prevScore = scoreRef.current;
       let msg = `通道 ${lane + 1}：`;
       if (lane === 0) {
-        ballsRef.current += 2;
+        ballsRef.current += 1;
         setBalls(ballsRef.current);
-        msg += "獲得兩顆彈珠";
+        msg += "獲得 1 顆彈珠";
       } else if (lane === 1) {
-        const gain = addRoundPoints(500, "up");
-        msg += `獲得 ${gain} 分`;
-      } else if (lane === 2) {
         scoreRef.current = Math.floor(scoreRef.current * 0.5);
-        msg += "總分 x0.5";
-      } else if (lane === 3) {
-        const randomItem = Math.floor(Math.random() * 3);
-        if (randomItem === 0) {
-          ballsRef.current += 1;
-          setBalls(ballsRef.current);
-          msg += "隨機道具：+1球";
-        } else if (randomItem === 1) {
-          const gain = addRoundPoints(300, "up");
-          msg += `隨機道具：+${gain}分`;
+        msg += "總分 ÷2";
+      } else if (lane === 2) {
+        if (hasCollectible("rust-coin")) {
+          msg += "無效果（已擁有生鏽銅幣）";
         } else {
-          comboRef.current = Math.min(comboRef.current + 1, 5);
-          msg += "隨機道具：連擊+1";
+          const reward = awardStallReward("pinball");
+          msg += reward.success ? "獲得生鏽銅幣" : "無效果";
+          if (reward.success) {
+            stallRewardGrantedRef.current = true;
+          }
         }
+      } else if (lane === 3) {
+        const gain = addRoundPoints(30, "up");
+        msg += `+${gain} 分`;
       } else if (lane === 4) {
-        scoreRef.current = Math.max(0, scoreRef.current - 500);
-        msg += "扣除 500 分";
+        scoreRef.current = Math.max(0, scoreRef.current - 10);
+        msg += "-10 分";
       } else {
-        scoreRef.current = Math.floor(scoreRef.current * 1.5);
-        msg += "總分 x1.5";
+        scoreRef.current = scoreRef.current * 2;
+        msg += "總分 ×2";
       }
       const gained = scoreRef.current - prevScore;
       roundScoreRef.current += gained;
       setScore(scoreRef.current);
-      flashScore(lane === 3 ? "down" : "up");
+      flashScore(lane === 4 ? "down" : "up");
       showRewardNotice(`${msg}\n本局得分 ${roundScoreRef.current >= 0 ? "+" : ""}${roundScoreRef.current}`);
       runDoneRef.current = true;
       ball.launched = false;
@@ -533,13 +636,13 @@ export default function PinballGame() {
 
       ball.pos = { x: -999, y: -999 };
       setStatus(msg);
-      tone(lane === 3 ? 130 : 650, 170, "triangle", 0.06);
+      sfx.playScore();
       flashesRef.current.push({
         x: laneCx,
         y: channelBallY(stackIndex, ball.radius),
         r: 48,
         life: 1,
-        color: lane === 3 ? "255,90,90" : "255,245,120",
+        color: lane === 4 ? "255,90,90" : "255,245,120",
       });
 
       if (settleTimeoutRef.current) window.clearTimeout(settleTimeoutRef.current);
@@ -548,11 +651,15 @@ export default function PinballGame() {
           runDoneRef.current = false;
           spawnNextBall();
         } else {
-          if (!stallRewardGrantedRef.current) {
-            stallRewardGrantedRef.current = true;
-            awardStallReward("pinball");
+          reportStallScore("pinball", scoreRef.current);
+          setStatus(`彈珠用完，總分 ${scoreRef.current}`);
+          if (!roundEndHandledRef.current) {
+            roundEndHandledRef.current = true;
+            const summary = finalizeGameRound(scoreRef.current);
+            setRoundEnd({ score: summary.score, lotteryYuan: summary.lotteryYuan });
           }
-          setStatus(`彈珠用完，總分 ${scoreRef.current}。按 R 重新開始`);
+          gameOverRef.current = true;
+          setGameOver(true);
         }
       }, 2000);
     };
@@ -586,6 +693,14 @@ export default function PinballGame() {
         drawPinballSprite(ctx, assets, ball.pos.x, ball.pos.y, ball.colorIndex);
         drawChargeMeter(ctx, assets, chargeRatioRef.current);
       }
+
+      const debugBalls = editModeRef.current
+        ? []
+        : [
+            ...settledBallsRef.current.map((s) => ({ x: s.x, y: s.y, radius: s.radius })),
+            { x: ball.pos.x, y: ball.pos.y, radius: ball.radius },
+          ];
+      drawPinballCollisionDebug(ctx, assets, layoutRef.current, debugBalls);
 
       flashesRef.current = flashesRef.current
         .map((f) => ({ ...f, life: f.life - 0.06 }))
@@ -626,26 +741,17 @@ export default function PinballGame() {
             if (lowPowerFallbackRef.current && railDirRef.current > 0 && t >= 0.62) {
               railDirRef.current = -1;
             } else if (railDirRef.current < 0 && t <= 0) {
-              // Low power: climbs partway then slides back down the rail.
+              // Low power: climbs partway then slides back — no ball consumed.
               inRailRef.current = false;
-              runDoneRef.current = true;
+              runDoneRef.current = false;
               ball.launched = false;
+              ballsRef.current += 1;
+              setBalls(ballsRef.current);
+              scoreMultiplierRef.current = 1;
+              roundScoreRef.current = 0;
               resetBall();
-              setStatus("力度不足，彈珠沿軌道滑回去（本次機會已消耗）");
-              tone(180, 130, "square", 0.05);
-              if (settleTimeoutRef.current) window.clearTimeout(settleTimeoutRef.current);
-              settleTimeoutRef.current = window.setTimeout(() => {
-                if (ballsRef.current > 0) {
-                  runDoneRef.current = false;
-                  spawnNextBall();
-                } else {
-                  if (!stallRewardGrantedRef.current) {
-                    stallRewardGrantedRef.current = true;
-                    awardStallReward("pinball");
-                  }
-                  setStatus(`彈珠用完，總分 ${scoreRef.current}。按 R 重新開始`);
-                }
-              }, 900);
+              setStatus("力度不足，彈珠沿軌道滑回去（不消耗彈珠）");
+              sfx.stopRolling();
             } else if (t >= 1) {
               railPhaseRef.current = 1;
               railArcProgressRef.current = 0;
@@ -675,6 +781,7 @@ export default function PinballGame() {
                 x: (tangent.x + spread) * speed,
                 y: (tangent.y + 0.25 + launchPower * 0.35) * speed,
               };
+              sfx.startRolling();
             }
           }
         } else {
@@ -685,7 +792,8 @@ export default function PinballGame() {
           ball.pos.y += ball.vel.y;
           collideWalls();
           collideImageObstacles();
-          collideSegment(launchDivider);
+          applyObstacleStuckEscape();
+          collideLaunchDivider();
           collideSeparators();
           const speed = Math.hypot(ball.vel.x, ball.vel.y);
           if (speed < 0.14 * PHYSICS_SCALE && ball.pos.y < CHANNEL_TOP + 10) {
@@ -737,6 +845,7 @@ export default function PinballGame() {
       }
       if (e.code === "Space") {
         e.preventDefault();
+        if (gameOverRef.current) return;
         if (!ball.launched && !runDoneRef.current && !chargingRef.current && ballsRef.current > 0) {
           chargingRef.current = true;
           chargeStartRef.current = performance.now();
@@ -745,33 +854,44 @@ export default function PinballGame() {
           setStatus("蓄力中...");
         }
       }
-      if (e.key.toLowerCase() === "r") {
-        scoreRef.current = 0;
-        comboRef.current = 1;
-        lastHitRef.current = 0;
-        runDoneRef.current = false;
-        if (settleTimeoutRef.current) {
-          window.clearTimeout(settleTimeoutRef.current);
-          settleTimeoutRef.current = null;
-        }
-        chargingRef.current = false;
-        chargeStartRef.current = 0;
-        chargeRatioRef.current = 0;
-        ballsRef.current = 5;
-        stallRewardGrantedRef.current = false;
-        settledBallsRef.current = [];
-        setScore(0);
-        setDisplayScore(0);
-        setBalls(5);
-        setChargeRatio(0);
-        setChargeTier("low");
-        setRewardText("");
-        setRewardVisible(false);
-        scoreMultiplierRef.current = 1;
-        setStatus("已重置，按住空白鍵蓄力，放開發球");
-        resetBall();
+      if (e.key.toLowerCase() === "r" && gameOverRef.current) {
+        return;
       }
     };
+
+    const resetGame = () => {
+      scoreRef.current = 0;
+      comboRef.current = 1;
+      lastHitRef.current = 0;
+      runDoneRef.current = false;
+      if (settleTimeoutRef.current) {
+        window.clearTimeout(settleTimeoutRef.current);
+        settleTimeoutRef.current = null;
+      }
+      chargingRef.current = false;
+      chargeStartRef.current = 0;
+      chargeRatioRef.current = 0;
+      ballsRef.current = 5;
+      peakBallsRef.current = 5;
+      stallRewardGrantedRef.current = false;
+      roundEndHandledRef.current = false;
+      gameOverRef.current = false;
+      settledBallsRef.current = [];
+      setScore(0);
+      setDisplayScore(0);
+      setBalls(5);
+      setPeakBalls(5);
+      setChargeRatio(0);
+      setChargeTier("low");
+      setRewardText("");
+      setRewardVisible(false);
+      setGameOver(false);
+      setRoundEnd(null);
+      scoreMultiplierRef.current = 1;
+      setStatus("按住空白鍵蓄力，放開發球");
+      resetBall();
+    };
+    resetGameRef.current = resetGame;
 
     const onKeyUp = (e: KeyboardEvent) => {
       if (editMode) return;
@@ -791,6 +911,7 @@ export default function PinballGame() {
       if (noticeClearTimeoutRef.current) window.clearTimeout(noticeClearTimeoutRef.current);
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
+      sfx.dispose();
     };
   }, [initialBall, editMode]);
 
@@ -933,14 +1054,15 @@ export default function PinballGame() {
   };
 
   return (
-    <main className="flex h-full min-h-0 w-full flex-col overflow-hidden">
+    <main className="relative flex h-full min-h-0 w-full flex-col overflow-hidden">
       <div className="pinball-play-row">
         <div ref={stageRef} className="pinball-stage relative min-h-0 min-w-0 flex-1">
           <GameHudBar
             score={displayScore}
-            resource={balls}
-            resourceLabel="彈珠"
+            resource={0}
+            resourceLabel=""
             scoreFlash={scoreFlash}
+            extra={<PinballMarbleHud balls={balls} peakBalls={peakBalls} />}
           />
           <canvas
             ref={canvasRef}
@@ -997,13 +1119,13 @@ export default function PinballGame() {
           {selectedObstacle.startsWith("obs:") ? (
             <div className="flex flex-wrap items-center justify-center gap-2">
               <button
-              type="button"
-              onClick={() => deleteObstacleByKey(selectedObstacle)}
-              className="game-action-btn text-xs border-red-400"
-            >
-              刪除
-            </button>
-            <span className="text-ink/70">
+                type="button"
+                onClick={() => deleteObstacleByKey(selectedObstacle)}
+                className="game-action-btn border-red-400 text-xs"
+              >
+                刪除
+              </button>
+              <span className="text-ink/70">
                 {layout.obstacles[Number(selectedObstacle.split(":")[1])]?.kind ?? ""} · 拖角點縮放 · ↻ 旋轉
               </span>
               <button
@@ -1053,6 +1175,18 @@ export default function PinballGame() {
           <div className="game-reward-overlay">{rewardText}</div>
         </div>
       ) : null}
+
+      <GameRoundEndModal
+        open={gameOver && roundEnd !== null}
+        score={roundEnd?.score ?? 0}
+        lotteryYuan={roundEnd?.lotteryYuan ?? 0}
+        tokens={tokens}
+        onPlayAgain={() => {
+          if (!trySpendPlayCost()) return;
+          resetGameRef.current();
+        }}
+        onReturnToMarket={() => returnToMarketAfterRound(router)}
+      />
     </main>
   );
 }

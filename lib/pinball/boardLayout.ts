@@ -1,4 +1,5 @@
 import { PINBALL_COLOR_KEYS, PINBALL_SOLID } from "@/lib/pinball/spriteMeta";
+import type { Segment } from "@/lib/pinball/types";
 
 /** 背景滿版原圖尺寸 */
 export const BOARD_WIDTH = 2750;
@@ -41,8 +42,11 @@ export const CHANNEL_BOTTOM = PLAYFIELD.channelBottom;
 export const CHANNEL_HEIGHT = PLAYFIELD.channelBottom - PLAYFIELD.channelTop;
 export const CHANNEL_LANE_COUNT = 6;
 
+/** 通道木隔板碰撞區上緣（僅下半段，避免上方卡珠） */
+export const CHANNEL_DIVIDER_COLLIDE_TOP = CHANNEL_TOP + CHANNEL_HEIGHT / 2;
+
 /** 六格垂直隔板 X（背景圖 channel 區多列掃描量測） */
-export const CHANNEL_DIVIDER_X = [1094, 1200, 1373, 1515, 1649, 1784] as const;
+export const CHANNEL_DIVIDER_X = [1094, 1210, 1373, 1515, 1649, 1784] as const;
 
 export const LAUNCH_RAIL_LEFT = LAUNCH.left;
 export const LAUNCH_RAIL_RIGHT = LAUNCH.right;
@@ -52,9 +56,12 @@ export const LAUNCH_DIVIDER_X = PLAYFIELD.right;
 
 export const CENTER_X = (WALL + PLAYFIELD_RIGHT) / 2;
 
-/** 頂部弧形軌道：垂直軌頂端 → 右上角 hood → 彈珠台中央最上方 */
-export const LAUNCH_ARC_CONTROL = { x: 1900, y: 248 };
+/** 頂部弧形軌道：垂直軌頂端 → 右上角 hood → 彈珠台中央最上方（控制點外推使轉彎更圓滑） */
+export const LAUNCH_ARC_CONTROL = { x: 1948, y: 218 };
 export const LAUNCH_EXIT = { x: CENTER_X, y: 296 };
+
+/** 發射軌左側隔板頂端圓角半徑 */
+export const LAUNCH_DIVIDER_FILLET_R = 56;
 
 /** 力度條槽位（left/right 順序不拘，draw 時會正規化） */
 export const CHARGE_METER = {
@@ -140,7 +147,7 @@ export function channelLaneFromX(x: number) {
 export function channelBallY(stackIndex: number, ballRadius: number) {
   const idx = Math.min(stackIndex, CHANNEL_STACK_MAX - 1);
   const baseY = PLAYFIELD.channelBottom - ballRadius;
-  const step = ballRadius * 1.72;
+  const step = ballRadius * 1.72 + 5;
   return baseY - idx * step;
 }
 
@@ -151,11 +158,44 @@ export function initialBallPos(ballRadius = 39) {
   };
 }
 
+/** 彈珠物理碰撞半徑相對 sprite 不透明區的縮放 */
+export const BALL_COLLISION_RADIUS_SCALE = 0.7;
+
 export function ballRadiusForColor(colorIndex: number) {
   const key = PINBALL_COLOR_KEYS[colorIndex] ?? "blue";
-  return PINBALL_SOLID[key].collisionRadius;
+  return PINBALL_SOLID[key].collisionRadius * BALL_COLLISION_RADIUS_SCALE;
 }
 
+/** 發射軌隔板垂直段起點 Y（頂端留圓角區） */
+export function launchDividerVerticalTop() {
+  return LAUNCH_RAIL_TOP + 64;
+}
+
+/** 發射軌隔板頂端圓角圓心（凸向主場一側） */
+export function launchDividerFilletCenter() {
+  return {
+    x: LAUNCH_DIVIDER_X - LAUNCH_DIVIDER_FILLET_R,
+    y: launchDividerVerticalTop() + LAUNCH_DIVIDER_FILLET_R,
+  };
+}
+
+/** 發射軌左側隔板垂直碰撞段（不含頂端圓角） */
+export function launchDividerVerticalSegment(): Segment {
+  const yTop = launchDividerVerticalTop() + LAUNCH_DIVIDER_FILLET_R;
+  return {
+    a: { x: LAUNCH_DIVIDER_X, y: yTop },
+    b: { x: LAUNCH_DIVIDER_X, y: LAUNCH_RAIL_BOTTOM },
+  };
+}
+
+export function channelDividerSegment(x: number): Segment {
+  return {
+    a: { x, y: CHANNEL_DIVIDER_COLLIDE_TOP },
+    b: { x, y: CHANNEL_BOTTOM },
+  };
+}
+
+/** @deprecated 使用 launchDividerVerticalSegment + 圓角碰撞 */
 export const launchDivider = {
   a: { x: LAUNCH_DIVIDER_X, y: PLAYFIELD.top + 36 },
   b: { x: LAUNCH_DIVIDER_X, y: LAUNCH_RAIL_BOTTOM },

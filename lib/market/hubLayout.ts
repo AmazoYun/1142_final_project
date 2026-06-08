@@ -1,6 +1,6 @@
 import type { StallId } from "@/lib/narrative/types";
 
-export const HUB_BACKGROUND = "/final_pic/background_long.png";
+export const HUB_BACKGROUND = "/final_pic/background_long.webp";
 
 /** 長背景原圖尺寸（11811 × 1417） */
 export const BG_NATIVE_WIDTH = 11811;
@@ -25,10 +25,10 @@ const INTERACTIVE_ORDER: {
   label: string;
   image: string;
 }[] = [
-  { id: "pinball", label: "彈珠台", image: "/final_pic/main_stall/gumball.png" },
-  { id: "balloonshoot", label: "射飛鏢", image: "/final_pic/main_stall/balloon.png" },
-  { id: "ringtoss", label: "套圈圈", image: "/final_pic/main_stall/circle.png" },
-  { id: "catchfish", label: "撈金魚", image: "/final_pic/main_stall/goldfish.png" },
+  { id: "pinball", label: "彈珠台", image: "/final_pic/main_stall/gumball.webp" },
+  { id: "balloonshoot", label: "射飛鏢", image: "/final_pic/main_stall/balloon.webp" },
+  { id: "ringtoss", label: "套圈圈", image: "/final_pic/main_stall/circle.webp" },
+  { id: "catchfish", label: "撈金魚", image: "/final_pic/main_stall/goldfish.webp" },
 ];
 
 /** 主列：首尾裝飾攤，遊戲攤固定順序，彼此間隔 2 個裝飾攤 */
@@ -103,9 +103,9 @@ function evenCenterRatios(count: number): number[] {
 /** 固定主列：圖片、順序、間距皆不隨機 */
 function buildFixedStallSequence(): SlotEntry[] {
   const slots: SlotEntry[] = [
-    { kind: "decorative", image: "/final_pic/random/stinky_tofu.png" },
-    { kind: "decorative", image: "/final_pic/random/ice_cream.png" },
-    { kind: "decorative", image: "/final_pic/random/foods.png" },
+    { kind: "decorative", image: "/final_pic/random/stinky_tofu.webp" },
+    { kind: "decorative", image: "/final_pic/random/ice_cream.webp" },
+    { kind: "decorative", image: "/final_pic/random/foods.webp" },
   ];
 
   for (let i = 0; i < INTERACTIVE_ORDER.length; i += 1) {
@@ -120,16 +120,16 @@ function buildFixedStallSequence(): SlotEntry[] {
     if (i < INTERACTIVE_ORDER.length - 1) {
       const gapImages = [
         [
-          "/final_pic/random/sausage.png",
-          "/final_pic/random/big_sausage_and_riceroll.png",
+          "/final_pic/random/sausage.webp",
+          "/final_pic/random/big_sausage_and_riceroll.webp",
         ],
         [
-          "/final_pic/random/sweet_potato_ball.png",
-          "/final_pic/random/ice_cream.png",
+          "/final_pic/random/sweet_potato_ball.webp",
+          "/final_pic/random/ice_cream.webp",
         ],
         [
-          "/final_pic/random/foods.png",
-          "/final_pic/random/sausage.png",
+          "/final_pic/random/foods.webp",
+          "/final_pic/random/sausage.webp",
         ],
       ][i];
 
@@ -141,7 +141,7 @@ function buildFixedStallSequence(): SlotEntry[] {
 
   slots.push({
     kind: "decorative",
-    image: "/final_pic/random/stinky_tofu.png",
+    image: "/final_pic/random/stinky_tofu.webp",
   });
 
   return slots;
@@ -152,14 +152,14 @@ function buildFixedEdgeStalls(): EdgeStall[] {
   const leftSpan = 0.08;
   const rightStart = 0.92;
   const leftImages = [
-    "/final_pic/random/ice_cream.png",
-    "/final_pic/random/sweet_potato_ball.png",
-    "/final_pic/random/foods.png",
+    "/final_pic/random/ice_cream.webp",
+    "/final_pic/random/sweet_potato_ball.webp",
+    "/final_pic/random/foods.webp",
   ];
   const rightImages = [
-    "/final_pic/random/sausage.png",
-    "/final_pic/random/stinky_tofu.png",
-    "/final_pic/random/big_sausage_and_riceroll.png",
+    "/final_pic/random/sausage.webp",
+    "/final_pic/random/stinky_tofu.webp",
+    "/final_pic/random/big_sausage_and_riceroll.webp",
   ];
   const edgeScales = [0.88, 0.9, 0.92];
   const stalls: EdgeStall[] = [];
@@ -288,7 +288,30 @@ export function edgeStallDimensions(
 }
 
 export const EDGE_STALL_Z_INDEX = EDGE_STALL_Z;
+/** 高於互動攤位、低於玩家，確保按鈕在攤位圖前方 */
+/** 高於前景陰影層 (160)，確保可點擊 */
+export const ENTER_BAR_Z_INDEX = 170;
 export const PLAYER_Z_INDEX = 150;
+/** 地上彩券貼圖（低於玩家，貼近路面） */
+export const LOTTERY_GROUND_Z_INDEX = 130;
+/** 地上拾取道具 UI 與貼圖的垂直間距 */
+export const PICKUP_ABOVE_GROUND_PX = 30;
+/** 地上拾取貼圖距離腳底線的偏移 */
+export const LOTTERY_GROUND_Y_OFFSET_PX = 14;
+/** 玩家與地上拾取物水平距離在此範圍內時顯示拾取 UI 並發光 */
+export const LOTTERY_PICKUP_RANGE_PX = 50;
+
+export function lotteryGroundY(metrics: HubMetrics) {
+  return metrics.worldHeight * PLAYER_FLOOR_RATIO - LOTTERY_GROUND_Y_OFFSET_PX;
+}
+
+export function isPlayerNearLotterySpawn(
+  playerX: number,
+  spawnWorldX: number,
+  rangePx = LOTTERY_PICKUP_RANGE_PX,
+): boolean {
+  return Math.abs(playerX - spawnWorldX) <= rangePx;
+}
 
 export function playerSpawnX(metrics: HubMetrics) {
   return metrics.playerMinX;
@@ -310,6 +333,40 @@ export const STALL_CENTER_TRIGGER_RATIO = 0.09;
 export const STALL_CENTER_TRIGGER_MAX_PX = 34;
 export const STALL_GLOW_RANGE_PX = 20;
 
+/** 攤位 BGM：400px 外緣開始淡入，200px 內為全音量區 */
+export const STALL_BGM_OUTER_RANGE_PX = 400;
+export const STALL_BGM_INNER_RANGE_PX = 200;
+/** @deprecated 使用 STALL_BGM_OUTER_RANGE_PX */
+export const STALL_BGM_RANGE_PX = STALL_BGM_OUTER_RANGE_PX;
+export const STALL_BGM_MIN_VOLUME = 0.02;
+export const STALL_BGM_MAX_VOLUME = 0.09;
+
+export function stallBgmVolumeForDistance(dist: number): number {
+  if (dist >= STALL_BGM_OUTER_RANGE_PX) return 0;
+  if (dist <= STALL_BGM_INNER_RANGE_PX) return STALL_BGM_MAX_VOLUME;
+  const t =
+    1 -
+    (dist - STALL_BGM_INNER_RANGE_PX) /
+      (STALL_BGM_OUTER_RANGE_PX - STALL_BGM_INNER_RANGE_PX);
+  return STALL_BGM_MIN_VOLUME + t * (STALL_BGM_MAX_VOLUME - STALL_BGM_MIN_VOLUME);
+}
+
+export function findNearestInteractiveStall(
+  playerX: number,
+  layout: HubLayout,
+  metrics: HubMetrics,
+): StallId {
+  let nearest: { id: StallId; dist: number } | null = null;
+  for (const stall of layout.stalls) {
+    if (stall.kind !== "interactive") continue;
+    const dist = Math.abs(playerX - stallCenterX(stall, metrics));
+    if (!nearest || dist < nearest.dist) {
+      nearest = { id: stall.id, dist };
+    }
+  }
+  return nearest?.id ?? "pinball";
+}
+
 export function findNearInteractiveStall(
   playerX: number,
   layout: HubLayout,
@@ -319,11 +376,7 @@ export function findNearInteractiveStall(
     if (stall.kind !== "interactive") continue;
     const sx = stallCenterX(stall, metrics);
     const { width } = stallDimensions(stall, metrics);
-    const centerRadius = Math.min(
-      STALL_CENTER_TRIGGER_MAX_PX,
-      width * STALL_CENTER_TRIGGER_RATIO,
-    );
-    if (Math.abs(playerX - sx) <= centerRadius) return stall.id;
+    if (isPlayerNearStallGlow(playerX, sx, width)) return stall.id;
   }
   return null;
 }
@@ -354,4 +407,27 @@ export function isPlayerNearStallGlow(
 
 export function stallGlowClass(near: boolean): string {
   return near ? "hub-stall-inner--glow" : "";
+}
+
+export function computeNearestStallBgm(
+  playerX: number,
+  layout: HubLayout,
+  metrics: HubMetrics,
+): { stallId: StallId; volume: number } | null {
+  let best: { stallId: StallId; volume: number; dist: number } | null = null;
+
+  for (const stall of layout.stalls) {
+    if (stall.kind !== "interactive") continue;
+    const sx = stallCenterX(stall, metrics);
+    const dist = Math.abs(playerX - sx);
+    if (dist > STALL_BGM_OUTER_RANGE_PX) continue;
+
+    const volume = stallBgmVolumeForDistance(dist);
+
+    if (!best || dist < best.dist) {
+      best = { stallId: stall.id, volume, dist };
+    }
+  }
+
+  return best ? { stallId: best.stallId, volume: best.volume } : null;
 }

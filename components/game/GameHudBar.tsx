@@ -36,12 +36,14 @@ export default function GameHudBar({
 
         {extra}
 
-        <div className="game-hud-stat game-hud-stat--resource">
-          <span className="game-hud-stat__label">{resourceLabel}</span>
-          <span className="game-hud-stat__value tabular-nums">
-            {resourceMax != null ? `${resource} / ${resourceMax}` : resource}
-          </span>
-        </div>
+        {resourceLabel ? (
+          <div className="game-hud-stat game-hud-stat--resource">
+            <span className="game-hud-stat__label">{resourceLabel}</span>
+            <span className="game-hud-stat__value tabular-nums">
+              {resourceMax != null ? `${resource} / ${resourceMax}` : resource}
+            </span>
+          </div>
+        ) : null}
       </div>
     </div>
   );
@@ -51,15 +53,19 @@ export function GameHudExtraStat({
   label,
   value,
   accent = false,
+  board = false,
 }: {
   label: string;
   value: ReactNode;
   accent?: boolean;
+  board?: boolean;
 }) {
+  const className = board
+    ? "game-hud-stat game-hud-stat--score"
+    : `game-hud-stat ${accent ? "game-hud-stat--accent" : ""}`.trim();
+
   return (
-    <div
-      className={`game-hud-stat ${accent ? "game-hud-stat--accent" : ""}`.trim()}
-    >
+    <div className={className}>
       <span className="game-hud-stat__label">{label}</span>
       <span className="game-hud-stat__value tabular-nums">{value}</span>
     </div>

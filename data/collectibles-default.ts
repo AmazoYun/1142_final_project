@@ -20,8 +20,8 @@ export const collectiblesDefault: CollectibleCatalog = {
     {
       id: "rust-coin",
       name: "生鏽的銅幣",
-      icon: "/collectibles/marble-icon.svg",
-      image: "/collectibles/marble.svg",
+      icon: "/backpack/coin.webp",
+      image: "/backpack/coin.webp",
       description:
         "一枚看起來像舊時代的代幣，邊緣參差不齊。",
       acquireDialogue: [
@@ -40,8 +40,8 @@ export const collectiblesDefault: CollectibleCatalog = {
     {
       id: "whistle",
       name: "塑膠哨子",
-      icon: "/collectibles/note-icon.svg",
-      image: "/collectibles/note.svg",
+      icon: "/backpack/whistler.webp",
+      image: "/backpack/whistler.webp",
       description:
         "一個亮紅色、邊緣粗糙的廉價塑膠哨子，聽起來聲音很尖銳。",
       acquireDialogue: [
@@ -65,8 +65,8 @@ export const collectiblesDefault: CollectibleCatalog = {
     {
       id: "keychain",
       name: "復古手電筒鑰匙圈",
-      icon: "/collectibles/bowl-icon.svg",
-      image: "/collectibles/bowl.svg",
+      icon: "/backpack/flashlight.webp",
+      image: "/backpack/flashlight.webp",
       description:
         "一支金屬製、外殼冰冷且厚重的復古手電筒，開關已經鬆脫了。",
       acquireDialogue: [
@@ -85,8 +85,8 @@ export const collectiblesDefault: CollectibleCatalog = {
     {
       id: "bracelet",
       name: "褪色的姓名手環",
-      icon: "/collectibles/rocking-horse-icon.svg",
-      image: "/collectibles/rocking-horse.svg",
+      icon: "/backpack/handlace.webp",
+      image: "/backpack/handlace.webp",
       description:
         "一條編織的手環，邊緣磨損，上面掛著一個刻有「宇」字的小玻璃珠。",
       acquireDialogue: [
@@ -110,8 +110,8 @@ export const collectiblesDefault: CollectibleCatalog = {
     {
       id: "point-card",
       name: "過期的夜市集點卡",
-      icon: "/collectibles/note-icon.svg",
-      image: "/collectibles/note.svg",
+      icon: "/backpack/card.webp",
+      image: "/backpack/card.webp",
       description:
         "一張邊緣捲曲、蓋滿紅色印章的紙卡，上面的店名已經褪色看不清了，最後一個印章日期停留在 1990 年 6 月。",
       acquireDialogue: [
@@ -135,8 +135,8 @@ export const collectiblesDefault: CollectibleCatalog = {
     {
       id: "plastic-mask",
       name: "裂了一角的「超人」塑膠面具",
-      icon: "/collectibles/note-icon.svg",
-      image: "/collectibles/note.svg",
+      icon: "/backpack/mask.webp",
+      image: "/backpack/mask.webp",
       description:
         "一個廉價的塑膠面具，表情是一個僵硬的笑臉。面具的一角已經碎裂，露出後方漆黑的塑膠邊緣。",
       acquireDialogue: [

@@ -1,8 +1,20 @@
 import type { LoadedPinballAssets } from "@/lib/pinball/assets";
-import { chargeMeterBounds } from "@/lib/pinball/boardLayout";
+import {
+  CHANNEL_BOTTOM,
+  CHANNEL_DIVIDER_X,
+  CHANNEL_TOP,
+  channelDividerSegment,
+  chargeMeterBounds,
+  launchDividerFilletCenter,
+  launchDividerVerticalSegment,
+  LAUNCH_DIVIDER_FILLET_R,
+  PLAYFIELD_CEILING,
+  PLAYFIELD_RIGHT,
+  WALL,
+} from "@/lib/pinball/boardLayout";
 import { PINBALL_COLOR_KEYS, PINBALL_SOLID } from "@/lib/pinball/spriteMeta";
-import type { ImageObstacle, LayoutData } from "@/lib/pinball/types";
-import { obstacleHalfExtents } from "@/lib/pinball/imageBody";
+import type { ImageObstacle, LayoutData, Segment } from "@/lib/pinball/types";
+import { obstacleHalfExtents, worldEdges } from "@/lib/pinball/imageBody";
 import { drawOrientedSelection } from "@/lib/pinball/editHandles";
 import type { OrientedFrame } from "@/lib/pinball/editHandles";
 import { obstacleKey } from "@/lib/pinball/unifiedLayout";
@@ -69,6 +81,70 @@ export function drawObstacleSprites(
       drawOrientedSelection(ctx, obstacleOrientedFrame(obs, body), true);
     }
   });
+}
+
+type CollisionDebugBall = { x: number; y: number; radius: number };
+
+/** 以紅線標示所有碰撞邊界（障礙物邊緣、牆、隔板、彈珠碰撞圓） */
+export function drawPinballCollisionDebug(
+  ctx: CanvasRenderingContext2D,
+  assets: LoadedPinballAssets | null,
+  layout: LayoutData,
+  balls: CollisionDebugBall[],
+) {
+  ctx.save();
+  ctx.strokeStyle = "rgba(255, 40, 40, 0.9)";
+  ctx.lineWidth = 1.5;
+
+  const strokeSeg = (s: Segment) => {
+    ctx.beginPath();
+    ctx.moveTo(s.a.x, s.a.y);
+    ctx.lineTo(s.b.x, s.b.y);
+    ctx.stroke();
+  };
+
+  strokeSeg({ a: { x: WALL, y: PLAYFIELD_CEILING }, b: { x: WALL, y: CHANNEL_TOP } });
+  strokeSeg({
+    a: { x: PLAYFIELD_RIGHT, y: PLAYFIELD_CEILING },
+    b: { x: PLAYFIELD_RIGHT, y: CHANNEL_TOP },
+  });
+  strokeSeg({
+    a: { x: WALL, y: PLAYFIELD_CEILING },
+    b: { x: PLAYFIELD_RIGHT, y: PLAYFIELD_CEILING },
+  });
+  strokeSeg(launchDividerVerticalSegment());
+
+  const fillet = launchDividerFilletCenter();
+  ctx.beginPath();
+  ctx.arc(
+    fillet.x,
+    fillet.y,
+    LAUNCH_DIVIDER_FILLET_R,
+    -Math.PI / 2,
+    0,
+  );
+  ctx.stroke();
+
+  for (const x of CHANNEL_DIVIDER_X) {
+    strokeSeg(channelDividerSegment(x));
+  }
+
+  if (assets) {
+    for (const obs of layout.obstacles) {
+      const body = assets.bodies[obs.kind];
+      const placed = { x: obs.x, y: obs.y, rotation: obs.rotation, scale: obs.scale };
+      for (const seg of worldEdges(body, placed)) strokeSeg(seg);
+    }
+  }
+
+  for (const ball of balls) {
+    if (ball.x < -100 || ball.y < -100) continue;
+    ctx.beginPath();
+    ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  ctx.restore();
 }
 
 export function drawPinballSprite(
@@ -144,10 +220,10 @@ export function drawChargeMeter(
   ctx.clip();
 
   const vert = ctx.createLinearGradient(ix, iy + ih, ix, iy);
-  vert.addColorStop(0, "rgba(120, 58, 42, 0.72)");
-  vert.addColorStop(0.45, "rgba(185, 52, 42, 0.82)");
-  vert.addColorStop(0.78, "rgba(235, 95, 58, 0.9)");
-  vert.addColorStop(1, "rgba(255, 228, 175, 0.98)");
+  vert.addColorStop(0, "rgba(150, 38, 32, 0.88)");
+  vert.addColorStop(0.42, "rgba(210, 72, 38, 0.9)");
+  vert.addColorStop(0.72, "rgba(240, 140, 42, 0.94)");
+  vert.addColorStop(1, "rgba(255, 228, 88, 0.98)");
   ctx.fillStyle = vert;
   ctx.fillRect(ix, fillTop - cornerR, iw, fillH + cornerR);
 
@@ -161,13 +237,14 @@ export function drawChargeMeter(
   ctx.fillStyle = horiz;
   ctx.fillRect(ix, fillTop - cornerR, iw, fillH + cornerR);
 
-  const topFade = ctx.createLinearGradient(0, fillTop, 0, fillTop + fillH);
-  topFade.addColorStop(0, "rgba(0, 0, 0, 0)");
-  topFade.addColorStop(0.12, "rgba(0, 0, 0, 0.55)");
-  topFade.addColorStop(0.28, "rgba(0, 0, 0, 1)");
-  topFade.addColorStop(1, "rgba(0, 0, 0, 1)");
-  ctx.fillStyle = topFade;
-  ctx.fillRect(ix, fillTop - cornerR, iw, fillH + cornerR);
+  const edgeFade = Math.min(ih * 0.16, 26);
+  const edgeMask = ctx.createLinearGradient(0, iy, 0, iy + ih);
+  edgeMask.addColorStop(0, "rgba(0, 0, 0, 0)");
+  edgeMask.addColorStop(edgeFade / ih, "rgba(0, 0, 0, 1)");
+  edgeMask.addColorStop(1 - edgeFade / ih, "rgba(0, 0, 0, 1)");
+  edgeMask.addColorStop(1, "rgba(0, 0, 0, 0)");
+  ctx.fillStyle = edgeMask;
+  ctx.fillRect(ix, iy, iw, ih);
 
   ctx.globalCompositeOperation = "source-over";
   ctx.restore();

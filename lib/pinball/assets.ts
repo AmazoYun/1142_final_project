@@ -2,16 +2,16 @@ import type { ObstacleKind } from "@/lib/pinball/types";
 import { buildImageBody, buildTriangleBody, type ImageBody } from "@/lib/pinball/imageBody";
 
 export const PINBALL_ASSET_PATHS = {
-  background: "/pinball/background.png",
-  channelWood: "/pinball/channel_woodstick.png",
-  obstacleRound: "/pinball/obstacle_round.png",
-  obstacleRect: "/pinball/obstacle_rectangle.png",
-  obstacleLine: "/pinball/obstacle_line.png",
-  obstacleTriangle: "/pinball/obstacle_triangle.png",
+  background: "/pinball/background.webp",
+  channelWood: "/pinball/channel_woodstick.webp",
+  obstacleRound: "/pinball/obstacle_round.webp",
+  obstacleRect: "/pinball/obstacle_rectangle.webp",
+  obstacleLine: "/pinball/obstacle_line.webp",
+  obstacleTriangle: "/pinball/obstacle_triangle.webp",
   pinballs: [
-    "/pinball/pinball_blue.png",
-    "/pinball/pinball_green.png",
-    "/pinball/pinball_orange.png",
+    "/pinball/pinball_blue.webp",
+    "/pinball/pinball_green.webp",
+    "/pinball/pinball_orange.webp",
   ],
 } as const;
 

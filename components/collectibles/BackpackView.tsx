@@ -1,155 +1,314 @@
-/**
- * =============================================================================
- * BackpackView — 背包 UI（對應線框 7-背包.png）
- * =============================================================================
- *
- * 【版面】
- * ┌─────────────────────────────────────────────────────────────┐
- * │ ← 返回                              [DEBUG 開關]            │
- * ├──────────────────────┬──────────────────────────────────────┤
- * │ 左：詳情（約 45%）    │ 右：物品網格（4 欄）                  │
- * │  ┌──────────────┐   │  [icon][icon][icon][ ]               │
- * │  │ 大圖（選中時） │   │  [  ][  ][  ][  ]                   │
- * │  └──────────────┘   │  ...                                 │
- * │  說明文字（選中時）   │  僅「已取得」顯示 icon；可點選已擁有物品  │
- * └──────────────────────┴──────────────────────────────────────┘
- *
- * 【互動】
- * - 未選中：左側空白
- * - 點右側已擁有物品：selectedId 更新，左側顯示 image + description
- * - 選中格：黃色光暈（backpack-slot--selected）
- */
-
 "use client";
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import type { CollectibleItemDef } from "@/lib/collectibles/types";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { getCollectibleDef } from "@/data/collectibles-default";
+import BackpackLotteryExchange from "./BackpackLotteryExchange";
+import BackpackRedeemButton from "./BackpackRedeemButton";
+import {
+  BACKPACK_BACKGROUND,
+  BACKPACK_DETAIL_DESC,
+  BACKPACK_DETAIL_IMAGE,
+  BACKPACK_DETAIL_NAME,
+  BACKPACK_ITEM_IMAGES,
+  BACKPACK_ITEM_SIZE_RATIO,
+  GRID_SLOTS,
+  LOTTERY_TICKET_IMAGES,
+  resolveCoverRect,
+  slotStyleInCover,
+} from "@/lib/collectibles/backpackLayout";
+import { startHubBgm } from "@/lib/market/hubSounds";
+import type { CollectibleId } from "@/lib/collectibles/types";
 import { useCollectibleStore } from "@/store/collectibleStore";
-import CollectibleDebugPanel from "./CollectibleDebugPanel";
+import type { LotteryTicketType } from "@/store/tokenStore";
+import { useTokenStore } from "@/store/tokenStore";
 
-const GRID_COLS = 4;
+function toAbsoluteStyle(box: { left: number; top: number; width: number; height: number }) {
+  return {
+    left: `${box.left}px`,
+    top: `${box.top}px`,
+    width: `${box.width}px`,
+    height: `${box.height}px`,
+  };
+}
+
+const LOTTERY_META: Record<
+  LotteryTicketType,
+  { name: string; desc: string; faceValue: number }
+> = {
+  ticket10: {
+    name: "10 元彩票",
+    desc: "夜市攤位常見的彩票，可兌換 10 枚遊戲代幣。",
+    faceValue: 10,
+  },
+  ticket50: {
+    name: "50 元彩票",
+    desc: "較少見的彩票，可兌換 50 枚遊戲代幣。",
+    faceValue: 50,
+  },
+};
+
+type GridEntry =
+  | { kind: "collectible"; id: CollectibleId; slotIndex: number }
+  | { kind: "lottery"; ticketType: LotteryTicketType; count: number; slotIndex: number };
 
 export default function BackpackView() {
   const hydrate = useCollectibleStore((s) => s.hydrate);
   const hydrated = useCollectibleStore((s) => s.hydrated);
-  const items = useCollectibleStore((s) => s.getAllDefs());
-  const acquired = useCollectibleStore((s) => s.acquired);
   const selectedId = useCollectibleStore((s) => s.selectedId);
   const setSelectedId = useCollectibleStore((s) => s.setSelectedId);
+  const acquired = useCollectibleStore((s) => s.acquired);
   const getDescription = useCollectibleStore((s) => s.getDescription);
-  const hasAcquired = useCollectibleStore((s) => s.hasAcquired);
 
-  const [debugOpen, setDebugOpen] = useState(false);
+  const hydrateTokens = useTokenStore((s) => s.hydrate);
+  const tokensHydrated = useTokenStore((s) => s.hydrated);
+  const ticket10 = useTokenStore((s) => s.ticket10);
+  const ticket50 = useTokenStore((s) => s.ticket50);
+
+  const [selectedLottery, setSelectedLottery] = useState<LotteryTicketType | null>(null);
+
+  const stageRef = useRef<HTMLDivElement>(null);
+  const [stageSize, setStageSize] = useState({ w: 0, h: 0 });
 
   useEffect(() => {
     hydrate();
-  }, [hydrate]);
+    hydrateTokens();
+    startHubBgm();
+  }, [hydrate, hydrateTokens]);
 
-  const selectedDef: CollectibleItemDef | undefined = selectedId
-    ? items.find((i) => i.id === selectedId)
-    : undefined;
+  useEffect(() => {
+    const el = stageRef.current;
+    if (!el) return;
+    const update = () => {
+      const rect = el.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        setStageSize({ w: rect.width, h: rect.height });
+      }
+    };
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
-  const showDetail = selectedDef && hasAcquired(selectedDef.id);
+  const cover = useMemo(
+    () => (stageSize.w > 0 ? resolveCoverRect(stageSize.w, stageSize.h) : null),
+    [stageSize.w, stageSize.h],
+  );
 
-  // 補滿網格至 4 的倍數（線框視覺用空槽）
-  const slotCount = Math.max(items.length, GRID_COLS * 3);
-  const paddedSlots = Array.from({ length: slotCount }, (_, i) => items[i] ?? null);
+  const gridEntries = useMemo(() => {
+    const entries: GridEntry[] = [];
+    let slotIndex = 0;
+    for (const id of acquired) {
+      if (slotIndex >= GRID_SLOTS.length) break;
+      entries.push({ kind: "collectible", id, slotIndex });
+      slotIndex += 1;
+    }
+    if (ticket10 > 0 && slotIndex < GRID_SLOTS.length) {
+      entries.push({ kind: "lottery", ticketType: "ticket10", count: ticket10, slotIndex });
+      slotIndex += 1;
+    }
+    if (ticket50 > 0 && slotIndex < GRID_SLOTS.length) {
+      entries.push({ kind: "lottery", ticketType: "ticket50", count: ticket50, slotIndex });
+    }
+    return entries;
+  }, [acquired, ticket10, ticket50]);
 
-  if (!hydrated) return null;
+  const selectedDef = selectedId ? getCollectibleDef(selectedId) : undefined;
+  const selectedLotteryCount =
+    selectedLottery === "ticket10" ? ticket10 : selectedLottery === "ticket50" ? ticket50 : 0;
+  const showCollectibleDetail = selectedDef && acquired.includes(selectedDef.id) && !selectedLottery;
+  const showLotteryDetail = selectedLottery !== null && selectedLotteryCount > 0;
+
+  useEffect(() => {
+    if (selectedLottery !== null && selectedLotteryCount <= 0) {
+      setSelectedLottery(null);
+    }
+  }, [selectedLottery, selectedLotteryCount]);
+
+  if (!hydrated || !tokensHydrated) return null;
+
+  const imageBox = cover ? slotStyleInCover(BACKPACK_DETAIL_IMAGE, cover) : null;
+  const nameBox = cover ? slotStyleInCover(BACKPACK_DETAIL_NAME, cover) : null;
+  const descBox = cover ? slotStyleInCover(BACKPACK_DETAIL_DESC, cover) : null;
+  const detailImageMax = imageBox
+    ? Math.min(imageBox.width * 0.82, imageBox.height * 0.9)
+    : 120;
+
+  const selectCollectible = (id: CollectibleId) => {
+    setSelectedLottery(null);
+    setSelectedId(id);
+  };
+
+  const selectLottery = (type: LotteryTicketType) => {
+    setSelectedId(null);
+    setSelectedLottery(type);
+  };
 
   return (
-    <div className="backpack-page min-h-screen flex flex-col bg-white text-black">
-      <header className="backpack-header shrink-0 flex items-center justify-between px-4 py-3 border-b-2 border-black">
+    <div className="backpack-page fixed inset-0 overflow-hidden text-[#f5eed8]">
+      <div ref={stageRef} className="backpack-stage absolute inset-0">
+        <Image
+          src={BACKPACK_BACKGROUND}
+          alt="道具"
+          fill
+          className="backpack-stage__bg object-cover object-center"
+          priority
+          unoptimized
+        />
+
+        {cover ? (
+          <>
+            <BackpackRedeemButton cover={cover} />
+
+            {gridEntries.map((entry) => {
+              const slot = GRID_SLOTS[entry.slotIndex];
+              if (!slot) return null;
+              const box = slotStyleInCover(slot, cover);
+              const itemSize = Math.min(box.width, box.height) * BACKPACK_ITEM_SIZE_RATIO;
+
+              if (entry.kind === "collectible") {
+                const def = getCollectibleDef(entry.id);
+                if (!def) return null;
+                const isSelected = selectedId === entry.id && !selectedLottery;
+                return (
+                  <button
+                    key={`item-${entry.id}`}
+                    type="button"
+                    className={`backpack-item-slot absolute ${
+                      isSelected ? "backpack-item-slot--selected" : ""
+                    }`}
+                    style={toAbsoluteStyle(box)}
+                    onClick={() => selectCollectible(entry.id)}
+                    aria-label={def.name}
+                  >
+                    <span
+                      className="backpack-item-slot__shadow"
+                      style={{ width: itemSize * 0.72, height: itemSize * 0.14 }}
+                      aria-hidden
+                    />
+                    <Image
+                      src={BACKPACK_ITEM_IMAGES[entry.id] ?? def.icon}
+                      alt=""
+                      width={Math.round(itemSize)}
+                      height={Math.round(itemSize)}
+                      className="backpack-item-slot__icon"
+                      style={{ width: itemSize, height: itemSize }}
+                      unoptimized
+                    />
+                  </button>
+                );
+              }
+
+              const meta = LOTTERY_META[entry.ticketType];
+              const isSelected = selectedLottery === entry.ticketType;
+              return (
+                <button
+                  key={`lottery-${entry.ticketType}`}
+                  type="button"
+                  className={`backpack-item-slot absolute ${
+                    isSelected ? "backpack-item-slot--selected" : ""
+                  }`}
+                  style={toAbsoluteStyle(box)}
+                  onClick={() => selectLottery(entry.ticketType)}
+                  aria-label={meta.name}
+                >
+                  <Image
+                    src={LOTTERY_TICKET_IMAGES[entry.ticketType]}
+                    alt=""
+                    width={Math.round(itemSize * 0.88)}
+                    height={Math.round(itemSize * 0.62)}
+                    className="backpack-lottery-ticket__image"
+                    style={{ width: itemSize * 0.88, height: itemSize * 0.62 }}
+                    unoptimized
+                  />
+                  <span className="backpack-item-slot__count" aria-label={`數量 ${entry.count}`}>
+                    {entry.count}
+                  </span>
+                </button>
+              );
+            })}
+
+            {showCollectibleDetail && selectedDef && imageBox && nameBox && descBox ? (
+              <>
+                <div
+                  className="backpack-detail-image-zone absolute pointer-events-none flex items-center justify-center"
+                  style={toAbsoluteStyle(imageBox)}
+                >
+                  <Image
+                    src={BACKPACK_ITEM_IMAGES[selectedDef.id] ?? selectedDef.image}
+                    alt={selectedDef.name}
+                    width={Math.round(detailImageMax)}
+                    height={Math.round(detailImageMax)}
+                    className="backpack-detail-overlay__image"
+                    unoptimized
+                  />
+                </div>
+                <p
+                  className="backpack-detail-overlay__name absolute pointer-events-none"
+                  style={toAbsoluteStyle(nameBox)}
+                >
+                  {selectedDef.name}
+                </p>
+                <p
+                  className="backpack-detail-overlay__desc absolute pointer-events-none"
+                  style={toAbsoluteStyle(descBox)}
+                >
+                  {getDescription(selectedDef)}
+                </p>
+              </>
+            ) : null}
+
+            {showLotteryDetail && selectedLottery && imageBox && nameBox && descBox ? (
+              <>
+                <div
+                  className="backpack-detail-image-zone absolute pointer-events-none flex items-center justify-center"
+                  style={toAbsoluteStyle(imageBox)}
+                >
+                  <Image
+                    src={LOTTERY_TICKET_IMAGES[selectedLottery]}
+                    alt={LOTTERY_META[selectedLottery].name}
+                    width={Math.round(detailImageMax)}
+                    height={Math.round(detailImageMax * 0.72)}
+                    className="backpack-detail-overlay__image backpack-lottery-ticket__image"
+                    style={{ width: detailImageMax, height: detailImageMax * 0.72 }}
+                    unoptimized
+                  />
+                </div>
+                <p
+                  className="backpack-detail-overlay__name absolute pointer-events-none"
+                  style={toAbsoluteStyle(nameBox)}
+                >
+                  {LOTTERY_META[selectedLottery].name}
+                </p>
+                <div
+                  className="backpack-detail-overlay__desc backpack-detail-overlay__desc--lottery absolute flex flex-col items-center justify-center gap-3"
+                  style={toAbsoluteStyle(descBox)}
+                >
+                  <p className="pointer-events-none">{LOTTERY_META[selectedLottery].desc}</p>
+                  <BackpackLotteryExchange
+                    type={selectedLottery}
+                    count={selectedLotteryCount}
+                  />
+                </div>
+              </>
+            ) : null}
+          </>
+        ) : null}
+      </div>
+
+      <header className="backpack-header absolute top-0 left-0 right-0 z-10 flex items-center justify-between px-4 py-3">
         <Link href="/market" className="backpack-back flex items-center gap-1 text-sm font-bold">
           <span aria-hidden>←</span>
           返回
         </Link>
-        <h1 className="text-sm font-bold tracking-widest">背包</h1>
-        <button
-          type="button"
-          className="backpack-wire-btn text-xs px-2 py-1"
-          onClick={() => setDebugOpen((o) => !o)}
-        >
-          {debugOpen ? "關閉 DEBUG" : "DEBUG"}
-        </button>
+        <h1 className="text-sm font-bold tracking-widest">道具</h1>
+        <span className="backpack-back invisible pointer-events-none text-sm font-bold" aria-hidden>
+          <span aria-hidden>←</span>
+          返回
+        </span>
       </header>
-
-      {debugOpen && <CollectibleDebugPanel />}
-
-      <div className="flex flex-1 min-h-0 flex-col md:flex-row">
-        {/* 左欄：物品詳情 */}
-        <section className="backpack-detail flex flex-col border-b-2 md:border-b-0 md:border-r-2 border-black md:w-[42%] min-h-[240px]">
-          <div className="backpack-detail-image flex-1 flex items-center justify-center p-6 border-b-2 border-black min-h-[180px]">
-            {showDetail && selectedDef ? (
-              <Image
-                src={selectedDef.image}
-                alt={selectedDef.name}
-                width={200}
-                height={200}
-                className="max-h-[200px] w-auto h-auto object-contain"
-                unoptimized
-              />
-            ) : (
-              <span className="text-black/30 text-sm tracking-widest">（未選取物品）</span>
-            )}
-          </div>
-          <div className="backpack-detail-desc p-4 min-h-[120px] text-sm leading-relaxed whitespace-pre-wrap">
-            {showDetail && selectedDef ? getDescription(selectedDef) : null}
-          </div>
-        </section>
-
-        {/* 右欄：物品網格 */}
-        <section className="backpack-grid-wrap flex-1 p-4 overflow-y-auto">
-          <div
-            className="backpack-grid grid gap-3"
-            style={{ gridTemplateColumns: `repeat(${GRID_COLS}, minmax(0, 1fr))` }}
-          >
-            {paddedSlots.map((def, index) => {
-              if (!def) {
-                return (
-                  <div
-                    key={`empty-${index}`}
-                    className="backpack-slot backpack-slot--empty aspect-square"
-                    aria-hidden
-                  />
-                );
-              }
-
-              const owned = acquired.includes(def.id);
-              const isSelected = selectedId === def.id && owned;
-
-              return (
-                <button
-                  key={def.id}
-                  type="button"
-                  disabled={!owned}
-                  className={`backpack-slot aspect-square relative flex items-center justify-center ${
-                    isSelected ? "backpack-slot--selected" : ""
-                  } ${!owned ? "backpack-slot--locked" : ""}`}
-                  onClick={() => {
-                    if (owned) setSelectedId(def.id);
-                  }}
-                  aria-label={owned ? def.name : `${def.name}（未取得）`}
-                  title={owned ? def.name : "尚未取得"}
-                >
-                  {owned ? (
-                    <Image
-                      src={def.icon}
-                      alt=""
-                      width={48}
-                      height={48}
-                      className="w-10 h-10 sm:w-12 sm:h-12 object-contain"
-                      unoptimized
-                    />
-                  ) : null}
-                </button>
-              );
-            })}
-          </div>
-        </section>
-      </div>
     </div>
   );
 }

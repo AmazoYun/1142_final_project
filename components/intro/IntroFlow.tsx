@@ -4,18 +4,31 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import StorySequencePlayer from "@/components/narrative/StorySequencePlayer";
 import { narrativeDefault } from "@/data/narrative-default";
+import { navigateWithFade } from "@/lib/navigation/navigateWithFade";
 import { useNarrativeStore } from "@/store/narrativeStore";
 
-export default function IntroFlow() {
+type Props = {
+  onComplete?: () => void;
+};
+
+export default function IntroFlow({ onComplete }: Props) {
   const router = useRouter();
   const hydrate = useNarrativeStore((s) => s.hydrate);
   const completeIntro = useNarrativeStore((s) => s.completeIntro);
-  const setEditMode = useNarrativeStore((s) => s.setEditMode);
   const [jumpTo, setJumpTo] = useState<number | null>(null);
 
   useEffect(() => {
     hydrate();
   }, [hydrate]);
+
+  const finishIntro = async () => {
+    completeIntro();
+    if (onComplete) {
+      onComplete();
+      return;
+    }
+    await navigateWithFade(router, "/market");
+  };
 
   const handleAction = (action: string) => {
     if (action === "goto-toilet") {
@@ -24,18 +37,8 @@ export default function IntroFlow() {
     } else if (action === "goto-investigate") {
       const idx = narrativeDefault.intro.findIndex((l) => l.id === "intro-d15");
       if (idx >= 0) setJumpTo(idx);
-    } else if (action === "goto-market") {
-      completeIntro();
-      setEditMode(false);
-      router.push("/market");
-    } else if (action === "edit-mode") {
-      setEditMode(true);
-      completeIntro();
-      router.push("/market");
-      return;
-    } else if (action === "skip-intro") {
-      completeIntro();
-      router.push("/market");
+    } else if (action === "goto-market" || action === "skip-intro") {
+      void finishIntro();
     }
   };
 
@@ -47,12 +50,9 @@ export default function IntroFlow() {
       key={jumpTo ?? "start"}
       lines={lines}
       showSkip
-      onSkip={() => handleAction("skip-intro")}
+      onSkip={() => void finishIntro()}
       onAction={(a) => handleAction(a)}
-      onComplete={() => {
-        completeIntro();
-        router.push("/market");
-      }}
+      onComplete={() => void finishIntro()}
     />
   );
 }
