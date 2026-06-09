@@ -1,16 +1,22 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState, type MouseEvent, type WheelEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useGameRoundActive } from "@/components/game/GameRoundActiveContext";
 import GameHudBar from "@/components/game/GameHudBar";
 import GameRoundEndModal from "@/components/game/GameRoundEndModal";
 import PinballMarbleHud from "@/components/pinball/PinballMarbleHud";
 import { awardStallReward } from "@/lib/collectibles/awardStallReward";
-import { hasCollectible } from "@/lib/collectibles/acquireItem";
+import { acquireCollectible, hasCollectible } from "@/lib/collectibles/acquireItem";
+import { STALL_REWARD } from "@/lib/collectibles/stallRewards";
+import { isGameInputBlocked } from "@/lib/collectibles/isGameInputBlocked";
 import { returnToMarketAfterRound } from "@/lib/economy/returnToMarket";
 import { finalizeGameRound } from "@/lib/economy/processRoundEnd";
 import { trySpendPlayCost } from "@/lib/economy/playGame";
+import { clearStallRoundDismissed } from "@/lib/game/stallRoundLeave";
+import { useStallRoundEndLeave } from "@/lib/game/useStallRoundEndLeave";
 import { reportStallScore } from "@/lib/player/reportStallScore";
+import { useCollectibleStore } from "@/store/collectibleStore";
 import { useTokenStore } from "@/store/tokenStore";
 import {
   loadPinballAssets,
@@ -22,23 +28,11 @@ import {
   drawChargeMeter,
   drawObstacleSprites,
   drawPinballBackground,
-  drawPinballCollisionDebug,
   drawPinballSprite,
 } from "@/lib/pinball/drawSprites";
 import { collideBallWithImageBody, isBallTouchingImageBody } from "@/lib/pinball/imageBody";
 import { createPinballSoundFx } from "@/lib/pinball/sounds";
-import {
-  rotateObstacleByPointer,
-  rotateObstacleDegrees,
-  scaleObstacleByCorner,
-  scaleObstacleUniform,
-  translateObstacle,
-  updateObstacleByKey,
-} from "@/lib/pinball/obstacleEdit";
-import {
-  pickObstacleAtPoint,
-  pickObstacleHandle,
-} from "@/lib/pinball/editSelection";
+import { playImpactSound } from "@/lib/sfx/randomSfx";
 import { migrateToUnifiedLayout } from "@/lib/pinball/unifiedLayout";
 
 import type { LayoutData, Segment, Vec } from "@/lib/pinball/types";
@@ -80,12 +74,7 @@ type Ball = { pos: Vec; vel: Vec; radius: number; launched: boolean; colorIndex:
 type SettledBall = { x: number; y: number; colorIndex: PinballColorIndex; lane: number; radius: number };
 type Flash = { x: number; y: number; r: number; life: number; color: string };
 type ChargeTier = "low" | "mid" | "high";
-type EditDrag =
-  | { mode: "move"; key: string; lastX: number; lastY: number }
-  | { mode: "scale"; key: string; corner: number; startPointer: Vec; startScale: number }
-  | { mode: "rotate"; key: string; startAngle: number; startRotation: number; cx: number; cy: number };
 
-const channelLabels = ["+1球", "÷2", "銅幣", "+30", "-10", "×2"] as const;
 const emptyLayout: LayoutData = { version: 2, obstacles: [] };
 
 function clamp(v: number, min: number, max: number) {
@@ -112,17 +101,24 @@ function getChargeTier(ratio: number): ChargeTier {
 const MAX_CHARGE_MS = 2000;
 const GRAVITY = 0.2 * PHYSICS_SCALE;
 const DRAG = 0.996;
-const BOUNCE = 0.32;
-const WALL_BOUNCE_DAMP = 0.55;
-const LOW_OBSTACLE_RESTITUTION = 0.28;
-const ROUND_OBSTACLE_RESTITUTION = 0.82;
+/** 牆面／木軌碰撞恢復係數（1 = 無碰撞能量損失） */
+const WALL_RESTITUTION = 0.94;
+const CHANNEL_SEGMENT_RESTITUTION = 0.94;
+const LOW_OBSTACLE_RESTITUTION = 0.92;
+const ROUND_OBSTACLE_RESTITUTION = 0.97;
 const SCORE_OBSTACLE_RESTITUTION = 0.96;
-const TRIANGLE_OBSTACLE_RESTITUTION = 0.76;
-const LOW_BOUNCE_VEL_SCALE = 0.62;
+const TRIANGLE_OBSTACLE_RESTITUTION = 0.92;
+const LINE_COLLISION_PUSH = 0.28 * PHYSICS_SCALE;
+const ROUND_COLLISION_PUSH = 0.18 * PHYSICS_SCALE;
+const MAX_BOUNCE_SPEED = 7.5 * PHYSICS_SCALE;
 const LOW_TIER_MAX = 0.34;
 const MID_TIER_MAX = 0.74;
 const HIGH_TIER_MULTIPLIER = 1.2;
-const OBSTACLE_STUCK_MS = 500;
+const OBSTACLE_STUCK_MS = 220;
+const MAX_SCORE = 500;
+const OBSTACLE_HIT_POINTS = 5;
+const CHANNEL_BONUS_POINTS = 20;
+const CHANNEL_PENALTY_POINTS = 8;
 
 
 export default function PinballGame() {
@@ -165,6 +161,10 @@ export default function PinballGame() {
 
   const router = useRouter();
   const tokens = useTokenStore((s) => s.tokens);
+  const hydrateCollectibles = useCollectibleStore((s) => s.hydrate);
+  const hasFortuneJia = useCollectibleStore((s) => s.hasAcquired("fortune-slip-jia"));
+  const hasPinballMarble = useCollectibleStore((s) => s.hasAcquired("pinball-marble"));
+  const hasRingTossReward = useCollectibleStore((s) => s.hasAcquired(STALL_REWARD.ringtoss));
 
   const [balls, setBalls] = useState(5);
   const [peakBalls, setPeakBalls] = useState(5);
@@ -178,14 +178,43 @@ export default function PinballGame() {
   const [status, setStatus] = useState("");
   const [gameOver, setGameOver] = useState(false);
   const [roundEnd, setRoundEnd] = useState<{ score: number; lotteryYuan: number } | null>(null);
-  const [rotateInput, setRotateInput] = useState("15");
-  const [layout, setLayout] = useState<LayoutData>(emptyLayout);
-  const [editMode, setEditMode] = useState(false);
-  const [savingLayout, setSavingLayout] = useState(false);
-  const [selectedObstacle, setSelectedObstacle] = useState<string>("");
-  const selectedObstacleRef = useRef("");
-  const editModeRef = useRef(false);
-  const dragRef = useRef<EditDrag | null>(null);
+  const { setRoundActive } = useGameRoundActive();
+
+  useEffect(() => {
+    hydrateCollectibles();
+  }, [hydrateCollectibles]);
+
+  useEffect(() => {
+    setRoundActive(!gameOver);
+  }, [gameOver, setRoundActive]);
+
+  const dismissRoundEndUi = useCallback(() => {
+    gameOverRef.current = false;
+    roundEndHandledRef.current = false;
+    setGameOver(false);
+    setRoundEnd(null);
+    resetGameRef.current();
+  }, []);
+
+  useStallRoundEndLeave("pinball", gameOver && roundEnd !== null, dismissRoundEndUi);
+
+  const marbleGrabEnabled =
+    hasFortuneJia &&
+    !hasPinballMarble &&
+    !hasRingTossReward &&
+    balls > 0 &&
+    !gameOver &&
+    !isGameInputBlocked();
+
+  const handleGrabMarble = useCallback(() => {
+    if (isGameInputBlocked()) return;
+    if (!hasFortuneJia || hasPinballMarble || hasRingTossReward || ballsRef.current <= 0) return;
+    const result = acquireCollectible("pinball-marble");
+    if (result.success) {
+      playImpactSound();
+      setStatus("已取得彈珠，可帶至套圈圈使用");
+    }
+  }, [hasFortuneJia, hasPinballMarble, hasRingTossReward]);
 
   const initialBall = useMemo<Ball>(() => {
     const colorIndex = 0 as PinballColorIndex;
@@ -199,68 +228,6 @@ export default function PinballGame() {
       colorIndex,
     };
   }, []);
-
-  const updateLayoutByKey = (key: string, dx: number, dy: number) => {
-    if (!key.startsWith("obs:")) return;
-    setLayout((prev) => {
-      const next: LayoutData = structuredClone(prev);
-      updateObstacleByKey(next, key, (obs) => translateObstacle(obs, dx, dy));
-      layoutRef.current = next;
-      return next;
-    });
-  };
-
-  const scaleLayoutByKey = (key: string, factor: number) => {
-    if (!key.startsWith("obs:")) return;
-    setLayout((prev) => {
-      const next: LayoutData = structuredClone(prev);
-      updateObstacleByKey(next, key, (obs) => scaleObstacleUniform(obs, factor));
-      layoutRef.current = next;
-      return next;
-    });
-  };
-
-  const deleteObstacleByKey = (key: string) => {
-    if (!key.startsWith("obs:")) return;
-    const i = Number(key.split(":")[1]);
-    setLayout((prev) => {
-      const next: LayoutData = {
-        version: prev.version,
-        obstacles: prev.obstacles.filter((_, idx) => idx !== i),
-      };
-      layoutRef.current = next;
-      return next;
-    });
-    setSelectedObstacle("");
-  };
-
-  const rotateObstacleByKey = (key: string, degree: number) => {
-    if (!key.startsWith("obs:")) return;
-    setLayout((prev) => {
-      const next: LayoutData = structuredClone(prev);
-      updateObstacleByKey(next, key, (obs) => rotateObstacleDegrees(obs, degree));
-      layoutRef.current = next;
-      return next;
-    });
-  };
-
-  useEffect(() => {
-    layoutRef.current = layout;
-  }, [layout]);
-
-  useEffect(() => {
-    selectedObstacleRef.current = selectedObstacle;
-  }, [selectedObstacle]);
-
-  useEffect(() => {
-    editModeRef.current = editMode;
-    if (editMode) {
-      setStatus("編輯模式：拖曳移動；拖角點縮放、↻ 旋轉；繪製與碰撞皆用 PNG 不透明邊緣");
-    } else {
-      setSelectedObstacle("");
-      setStatus("");
-    }
-  }, [editMode]);
 
   useEffect(() => {
     const loadLayout = async () => {
@@ -276,7 +243,6 @@ export default function PinballGame() {
           return;
         }
         layoutRef.current = data;
-        setLayout(data);
       } catch {
         setStatus("障礙物布局載入失敗");
       }
@@ -334,9 +300,11 @@ export default function PinballGame() {
       window.setTimeout(() => setScoreFlash(null), 220);
     };
 
+    const clampScore = (v: number) => Math.max(0, Math.min(MAX_SCORE, v));
+
     const addRoundPoints = (base: number, dir: "up" | "down" = "up") => {
       const scaled = Math.round(base * scoreMultiplierRef.current);
-      scoreRef.current += scaled;
+      scoreRef.current = clampScore(scoreRef.current + scaled);
       roundScoreRef.current += scaled;
       setScore(scoreRef.current);
       flashScore(dir);
@@ -374,6 +342,7 @@ export default function PinballGame() {
       chargeRatioRef.current = 0;
       setChargeRatio(0);
       setChargeTier("low");
+      sfx.stopPress();
       scoreMultiplierRef.current = 1;
       obstacleStuckRef.current = null;
     };
@@ -404,7 +373,6 @@ export default function PinballGame() {
       railSpeedRef.current = 0.016 + p * 0.03;
       ball.vel = { x: 0, y: 0 };
       setStatus(p >= 0.999 ? "滿蓄力發射！本局得分 x1.2" : tier === "high" ? "高力度發射！" : tier === "mid" ? "中力度發射！" : "低力度發射");
-      sfx.playPress();
     };
 
     const collideWalls = () => {
@@ -413,16 +381,16 @@ export default function PinballGame() {
       const top = PLAYFIELD_CEILING + ball.radius;
       if (ball.pos.x < left) {
         ball.pos.x = left;
-        ball.vel.x = Math.abs(ball.vel.x) * BOUNCE * WALL_BOUNCE_DAMP;
+        ball.vel.x = -ball.vel.x * WALL_RESTITUTION;
         sfx.playBump();
       } else if (ball.pos.x > right) {
         ball.pos.x = right;
-        ball.vel.x = -Math.abs(ball.vel.x) * BOUNCE * WALL_BOUNCE_DAMP;
+        ball.vel.x = -ball.vel.x * WALL_RESTITUTION;
         sfx.playBump();
       }
       if (ball.pos.y < top) {
         ball.pos.y = top;
-        ball.vel.y = Math.abs(ball.vel.y) * BOUNCE * WALL_BOUNCE_DAMP;
+        ball.vel.y = -ball.vel.y * WALL_RESTITUTION;
         sfx.playBump();
       }
     };
@@ -439,8 +407,8 @@ export default function PinballGame() {
       ball.pos.x = c.x + n.x * (ball.radius + 1.5);
       ball.pos.y = c.y + n.y * (ball.radius + 1.5);
       ball.vel = reflect(ball.vel, n);
-      ball.vel.x *= 0.48;
-      ball.vel.y *= 0.48;
+      ball.vel.x *= CHANNEL_SEGMENT_RESTITUTION;
+      ball.vel.y *= CHANNEL_SEGMENT_RESTITUTION;
       flashesRef.current.push({ x: c.x, y: c.y, r: 24, life: 1, color: "255,220,120" });
       sfx.playBump();
       return true;
@@ -452,7 +420,7 @@ export default function PinballGame() {
         if (Math.abs(ball.pos.x - x) < ball.radius + 2) {
           const dir = ball.pos.x < x ? -1 : 1;
           ball.pos.x = x + dir * (ball.radius + 2);
-          ball.vel.x = dir * Math.abs(ball.vel.x) * 0.38;
+          ball.vel.x = -ball.vel.x * CHANNEL_SEGMENT_RESTITUTION;
           flashesRef.current.push({ x, y: ball.pos.y, r: 14, life: 1, color: "255,210,100" });
           sfx.playBump();
         }
@@ -477,8 +445,8 @@ export default function PinballGame() {
       ball.pos.x = cx + n.x * (R + ball.radius + 1.5);
       ball.pos.y = cy + n.y * (R + ball.radius + 1.5);
       ball.vel = reflect(ball.vel, n);
-      ball.vel.x *= 0.5;
-      ball.vel.y *= 0.5;
+      ball.vel.x *= CHANNEL_SEGMENT_RESTITUTION;
+      ball.vel.y *= CHANNEL_SEGMENT_RESTITUTION;
       flashesRef.current.push({ x: ball.pos.x, y: ball.pos.y, r: 20, life: 1, color: "255,220,120" });
       sfx.playBump();
     };
@@ -517,11 +485,11 @@ export default function PinballGame() {
 
       if (now - prev.since < OBSTACLE_STUCK_MS) return;
 
-      const push = 1.35 * PHYSICS_SCALE;
-      ball.vel.x = touch.normal.x * push + (Math.random() - 0.5) * 0.3 * PHYSICS_SCALE;
-      ball.vel.y = touch.normal.y * push - 0.15 * PHYSICS_SCALE;
-      ball.pos.x += touch.normal.x * ball.radius * 0.4;
-      ball.pos.y += touch.normal.y * ball.radius * 0.4;
+      const push = 1.8 * PHYSICS_SCALE;
+      ball.vel.x = touch.normal.x * push + (Math.random() - 0.5) * 0.4 * PHYSICS_SCALE;
+      ball.vel.y = touch.normal.y * push - 0.2 * PHYSICS_SCALE;
+      ball.pos.x += touch.normal.x * ball.radius * 0.55;
+      ball.pos.y += touch.normal.y * ball.radius * 0.55;
       obstacleStuckRef.current = null;
       flashesRef.current.push({
         x: ball.pos.x,
@@ -559,9 +527,21 @@ export default function PinballGame() {
           if (!res.hit) continue;
           ball.pos = res.pos;
           ball.vel = res.vel;
-          if (!bouncy) {
-            ball.vel.x *= LOW_BOUNCE_VEL_SCALE;
-            ball.vel.y *= LOW_BOUNCE_VEL_SCALE;
+          if (obs.kind === "line" || obs.kind === "rect") {
+            ball.vel.x += res.normal.x * LINE_COLLISION_PUSH;
+            ball.vel.y += res.normal.y * LINE_COLLISION_PUSH;
+          }
+          if (obs.kind === "round") {
+            ball.vel.x += res.normal.x * ROUND_COLLISION_PUSH;
+            ball.vel.y += res.normal.y * ROUND_COLLISION_PUSH;
+          }
+          if (bouncy) {
+            const speed = Math.hypot(ball.vel.x, ball.vel.y);
+            if (speed > MAX_BOUNCE_SPEED) {
+              const scale = MAX_BOUNCE_SPEED / speed;
+              ball.vel.x *= scale;
+              ball.vel.y *= scale;
+            }
           }
           if (pass === 0) {
             flashesRef.current.push({
@@ -573,7 +553,7 @@ export default function PinballGame() {
             });
             if (obs.kind === "round") {
               lastHitRef.current = performance.now();
-              addRoundPoints(10, "up");
+              addRoundPoints(OBSTACLE_HIT_POINTS, "up");
             }
             sfx.playBump();
           }
@@ -581,42 +561,50 @@ export default function PinballGame() {
       }
     };
 
+    const channelRewardLabel = (lane: number, bonusGain?: number, gotItem = false) => {
+      if (lane === 0) return "彈珠+1";
+      if (lane === 1) return "÷2";
+      if (lane === 2) return gotItem ? "銅幣" : null;
+      if (lane === 3) return `+${bonusGain ?? CHANNEL_BONUS_POINTS}分`;
+      if (lane === 4) return `-${CHANNEL_PENALTY_POINTS}分`;
+      return "×2";
+    };
+
     const resolveChannel = () => {
       const lane = channelLaneFromX(ball.pos.x);
       const prevScore = scoreRef.current;
-      let msg = `通道 ${lane + 1}：`;
+      let bonusGain = 0;
+      let gotItem = false;
       if (lane === 0) {
         ballsRef.current += 1;
         setBalls(ballsRef.current);
-        msg += "獲得 1 顆彈珠";
       } else if (lane === 1) {
-        scoreRef.current = Math.floor(scoreRef.current * 0.5);
-        msg += "總分 ÷2";
+        scoreRef.current = clampScore(Math.floor(scoreRef.current * 0.5));
       } else if (lane === 2) {
-        if (hasCollectible("rust-coin")) {
-          msg += "無效果（已擁有生鏽銅幣）";
-        } else {
+        if (!hasCollectible("rust-coin")) {
           const reward = awardStallReward("pinball");
-          msg += reward.success ? "獲得生鏽銅幣" : "無效果";
           if (reward.success) {
             stallRewardGrantedRef.current = true;
+            gotItem = true;
           }
         }
       } else if (lane === 3) {
-        const gain = addRoundPoints(30, "up");
-        msg += `+${gain} 分`;
+        bonusGain = Math.round(CHANNEL_BONUS_POINTS * scoreMultiplierRef.current);
+        scoreRef.current = clampScore(scoreRef.current + bonusGain);
       } else if (lane === 4) {
-        scoreRef.current = Math.max(0, scoreRef.current - 10);
-        msg += "-10 分";
+        scoreRef.current = clampScore(scoreRef.current - CHANNEL_PENALTY_POINTS);
       } else {
-        scoreRef.current = scoreRef.current * 2;
-        msg += "總分 ×2";
+        scoreRef.current = clampScore(scoreRef.current * 2);
       }
       const gained = scoreRef.current - prevScore;
       roundScoreRef.current += gained;
       setScore(scoreRef.current);
+      const msg = channelRewardLabel(lane, bonusGain, gotItem);
       flashScore(lane === 4 ? "down" : "up");
-      showRewardNotice(`${msg}\n本局得分 ${roundScoreRef.current >= 0 ? "+" : ""}${roundScoreRef.current}`);
+      if (msg) {
+        showRewardNotice(msg);
+        setStatus(msg);
+      }
       runDoneRef.current = true;
       ball.launched = false;
       ball.vel = { x: 0, y: 0 };
@@ -635,7 +623,6 @@ export default function PinballGame() {
       }
 
       ball.pos = { x: -999, y: -999 };
-      setStatus(msg);
       sfx.playScore();
       flashesRef.current.push({
         x: laneCx,
@@ -678,29 +665,13 @@ export default function PinballGame() {
       ctx.clearRect(0, 0, cw, ch);
       drawPinballBackground(ctx, assets, cw, ch);
 
-      drawObstacleSprites(
-        ctx,
-        assets,
-        layoutRef.current,
-        editModeRef.current ? selectedObstacleRef.current : "",
-        editModeRef.current,
-      );
+      drawObstacleSprites(ctx, assets, layoutRef.current);
 
-      if (!editModeRef.current) {
-        for (const settled of settledBallsRef.current) {
-          drawPinballSprite(ctx, assets, settled.x, settled.y, settled.colorIndex);
-        }
-        drawPinballSprite(ctx, assets, ball.pos.x, ball.pos.y, ball.colorIndex);
-        drawChargeMeter(ctx, assets, chargeRatioRef.current);
+      for (const settled of settledBallsRef.current) {
+        drawPinballSprite(ctx, assets, settled.x, settled.y, settled.colorIndex);
       }
-
-      const debugBalls = editModeRef.current
-        ? []
-        : [
-            ...settledBallsRef.current.map((s) => ({ x: s.x, y: s.y, radius: s.radius })),
-            { x: ball.pos.x, y: ball.pos.y, radius: ball.radius },
-          ];
-      drawPinballCollisionDebug(ctx, assets, layoutRef.current, debugBalls);
+      drawPinballSprite(ctx, assets, ball.pos.x, ball.pos.y, ball.colorIndex);
+      drawChargeMeter(ctx, assets, chargeRatioRef.current);
 
       flashesRef.current = flashesRef.current
         .map((f) => ({ ...f, life: f.life - 0.06 }))
@@ -718,7 +689,6 @@ export default function PinballGame() {
 
     let raf = 0;
     const tick = () => {
-      if (!editModeRef.current) {
       if (chargingRef.current && !ball.launched && !runDoneRef.current) {
         const linear = clamp((performance.now() - chargeStartRef.current) / MAX_CHARGE_MS, 0, 1);
         const p = Math.pow(linear, 1.85);
@@ -730,8 +700,9 @@ export default function PinballGame() {
       if (!ball.launched) {
         const railLeft = LAUNCH_RAIL_LEFT + ball.radius;
         const railRight = LAUNCH_RAIL_RIGHT - ball.radius;
-        ball.pos.x = clamp(ball.pos.x, railLeft, railRight);
+        ball.pos.x = launchRailCenterX();
         ball.pos.y = initialBallPos(ball.radius).y;
+        ball.pos.x = clamp(ball.pos.x, railLeft, railRight);
       } else if (inRailRef.current) {
           if (railPhaseRef.current === 0) {
             railProgressRef.current += railSpeedRef.current * railDirRef.current;
@@ -815,32 +786,19 @@ export default function PinballGame() {
           }
           if (ball.pos.y + ball.radius >= CHANNEL_BOTTOM - 4 && ball.vel.y > 0) resolveChannel();
         }
-      }
 
       draw();
       raf = requestAnimationFrame(tick);
     };
 
     const onKeyDown = (e: KeyboardEvent) => {
-      if (editModeRef.current && (e.code === "Delete" || e.code === "Backspace") && selectedObstacleRef.current) {
-        e.preventDefault();
-        const key = selectedObstacleRef.current;
-        if (key.startsWith("obs:")) {
-          const idx = Number(key.split(":")[1]);
-          setLayout((prev) => {
-            const next: LayoutData = {
-              version: prev.version,
-              obstacles: prev.obstacles.filter((_, i) => i !== idx),
-            };
-            layoutRef.current = next;
-            return next;
-          });
-          setSelectedObstacle("");
-          setStatus("已刪除障礙物");
+      if (isGameInputBlocked()) {
+        if (chargingRef.current) {
+          chargingRef.current = false;
+          chargeRatioRef.current = 0;
+          setChargeRatio(0);
+          sfx.stopPress();
         }
-      }
-      if (editMode && e.code === "Space") {
-        e.preventDefault();
         return;
       }
       if (e.code === "Space") {
@@ -852,10 +810,8 @@ export default function PinballGame() {
           chargeRatioRef.current = 0;
           setChargeRatio(0);
           setStatus("蓄力中...");
+          sfx.startPress();
         }
-      }
-      if (e.key.toLowerCase() === "r" && gameOverRef.current) {
-        return;
       }
     };
 
@@ -894,9 +850,10 @@ export default function PinballGame() {
     resetGameRef.current = resetGame;
 
     const onKeyUp = (e: KeyboardEvent) => {
-      if (editMode) return;
+      if (isGameInputBlocked()) return;
       if (e.code === "Space" && chargingRef.current) {
         chargingRef.current = false;
+        sfx.stopPress();
         launch();
       }
     };
@@ -913,145 +870,7 @@ export default function PinballGame() {
       window.removeEventListener("keyup", onKeyUp);
       sfx.dispose();
     };
-  }, [initialBall, editMode]);
-
-  const pickObstacleAt = (x: number, y: number): string =>
-    pickObstacleAtPoint(x, y, layoutRef.current, assetsRef.current);
-
-  const getCanvasPoint = (e: MouseEvent<HTMLCanvasElement> | WheelEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return { x: 0, y: 0 };
-    const rect = canvas.getBoundingClientRect();
-    return {
-      x: ((e.clientX - rect.left) / rect.width) * BOARD_WIDTH,
-      y: ((e.clientY - rect.top) / rect.height) * BOARD_HEIGHT,
-    };
-  };
-
-  const onCanvasMouseDown = (e: MouseEvent<HTMLCanvasElement>) => {
-    if (!editMode) return;
-    e.preventDefault();
-    const p = getCanvasPoint(e);
-    const layout = layoutRef.current;
-    const assets = assetsRef.current;
-
-    const handlePick = pickObstacleHandle(p.x, p.y, layout, assets, selectedObstacleRef.current);
-    if (handlePick) {
-      setSelectedObstacle(handlePick.key);
-      const { key, hit, frame } = handlePick;
-      const obs = layout.obstacles[Number(key.split(":")[1])];
-      if (hit.kind === "rotate") {
-        dragRef.current = {
-          mode: "rotate",
-          key,
-          startAngle: Math.atan2(p.y - frame.cy, p.x - frame.cx),
-          startRotation: obs.rotation,
-          cx: frame.cx,
-          cy: frame.cy,
-        };
-        return;
-      }
-      if (hit.kind === "corner" && hit.corner !== undefined) {
-        dragRef.current = {
-          mode: "scale",
-          key,
-          corner: hit.corner,
-          startPointer: p,
-          startScale: obs.scale,
-        };
-        return;
-      }
-    }
-
-    const key = pickObstacleAt(p.x, p.y);
-    if (!key) {
-      setSelectedObstacle("");
-      return;
-    }
-    setSelectedObstacle(key);
-    dragRef.current = { mode: "move", key, lastX: p.x, lastY: p.y };
-  };
-
-  const onCanvasMouseMove = (e: MouseEvent<HTMLCanvasElement>) => {
-    if (!editMode || !dragRef.current) return;
-    const p = getCanvasPoint(e);
-    const drag = dragRef.current;
-    const assets = assetsRef.current;
-    if (!assets) return;
-
-    if (drag.mode === "move") {
-      const dx = p.x - drag.lastX;
-      const dy = p.y - drag.lastY;
-      dragRef.current = { ...drag, lastX: p.x, lastY: p.y };
-      updateLayoutByKey(drag.key, dx, dy);
-      return;
-    }
-
-    const i = Number(drag.key.split(":")[1]);
-
-    if (drag.mode === "scale") {
-      setLayout((prev) => {
-        const next: LayoutData = structuredClone(prev);
-        const obs = next.obstacles[i];
-        const body = assets.bodies[obs.kind];
-        next.obstacles[i] = scaleObstacleByCorner(
-          obs,
-          body.nativeW,
-          body.nativeH,
-          drag.corner,
-          p,
-          drag.startPointer,
-          drag.startScale,
-        );
-        layoutRef.current = next;
-        return next;
-      });
-      return;
-    }
-
-    if (drag.mode === "rotate") {
-      setLayout((prev) => {
-        const next: LayoutData = structuredClone(prev);
-        next.obstacles[i] = rotateObstacleByPointer(
-          next.obstacles[i],
-          p,
-          drag.startAngle,
-          drag.startRotation,
-          drag.cx,
-          drag.cy,
-        );
-        layoutRef.current = next;
-        return next;
-      });
-    }
-  };
-
-  const onCanvasMouseUp = () => {
-    dragRef.current = null;
-  };
-
-  const onCanvasWheel = (e: WheelEvent<HTMLCanvasElement>) => {
-    if (!editMode || !selectedObstacle) return;
-    e.preventDefault();
-    const factor = e.deltaY < 0 ? 1.07 : 0.93;
-    scaleLayoutByKey(selectedObstacle, factor);
-  };
-
-  const saveLayout = async () => {
-    try {
-      setSavingLayout(true);
-      const res = await fetch("/api/pinball-layout", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(layoutRef.current),
-      });
-      setStatus(res.ok ? "障礙物布局已儲存" : "儲存失敗");
-    } catch {
-      setStatus("儲存失敗");
-    } finally {
-      setSavingLayout(false);
-    }
-  };
+  }, [initialBall]);
 
   return (
     <main className="relative flex h-full min-h-0 w-full flex-col overflow-hidden">
@@ -1062,107 +881,27 @@ export default function PinballGame() {
             resource={0}
             resourceLabel=""
             scoreFlash={scoreFlash}
-            extra={<PinballMarbleHud balls={balls} peakBalls={peakBalls} />}
+            extra={
+              <PinballMarbleHud
+                balls={balls}
+                peakBalls={peakBalls}
+                grabEnabled={marbleGrabEnabled}
+                onGrabMarble={handleGrabMarble}
+              />
+            }
           />
           <canvas
             ref={canvasRef}
             width={BOARD_WIDTH}
             height={BOARD_HEIGHT}
-            className={`block h-full w-full touch-none ${editMode ? "cursor-crosshair" : ""}`}
-            onMouseDown={onCanvasMouseDown}
-            onMouseMove={onCanvasMouseMove}
-            onMouseUp={onCanvasMouseUp}
-            onMouseLeave={onCanvasMouseUp}
-            onWheel={onCanvasWheel}
+            className="block h-full w-full touch-none"
           />
         </div>
       </div>
 
-      <div className="flex shrink-0 flex-wrap items-center justify-center gap-2 px-3 pb-2 text-xs game-message">
-        <button
-          type="button"
-          onClick={() => setEditMode((v) => !v)}
-          className={`game-action-btn text-xs ${editMode ? "border-amber-500" : ""}`}
-        >
-          {editMode ? "編輯中" : "編輯模式"}
-        </button>
-        <button
-          type="button"
-          onClick={saveLayout}
-          disabled={savingLayout}
-          className="game-action-btn text-xs disabled:opacity-50"
-        >
-          {savingLayout ? "儲存中" : "儲存布局"}
-        </button>
-        <span>{status}</span>
-      </div>
-
-      {editMode && selectedObstacle ? (
-        <div className="shrink-0 space-y-2 px-3 pb-2 text-xs">
-          <div className="flex flex-wrap items-center justify-center gap-2">
-            <button
-              type="button"
-              onClick={() => scaleLayoutByKey(selectedObstacle, 1.1)}
-              className="game-action-btn text-xs"
-            >
-              放大
-            </button>
-            <button
-              type="button"
-              onClick={() => scaleLayoutByKey(selectedObstacle, 0.9)}
-              className="game-action-btn text-xs"
-            >
-              縮小
-            </button>
-          </div>
-
-          {selectedObstacle.startsWith("obs:") ? (
-            <div className="flex flex-wrap items-center justify-center gap-2">
-              <button
-                type="button"
-                onClick={() => deleteObstacleByKey(selectedObstacle)}
-                className="game-action-btn border-red-400 text-xs"
-              >
-                刪除
-              </button>
-              <span className="text-ink/70">
-                {layout.obstacles[Number(selectedObstacle.split(":")[1])]?.kind ?? ""} · 拖角點縮放 · ↻ 旋轉
-              </span>
-              <button
-                type="button"
-                onClick={() => rotateObstacleByKey(selectedObstacle, -15)}
-                className="game-action-btn text-xs"
-              >
-                左轉 15°
-              </button>
-              <button
-                type="button"
-                onClick={() => rotateObstacleByKey(selectedObstacle, 15)}
-                className="game-action-btn text-xs"
-              >
-                右轉 15°
-              </button>
-              <div className="flex items-center gap-2 game-overlay-panel px-2 py-2">
-                <input
-                  value={rotateInput}
-                  onChange={(e) => setRotateInput(e.target.value)}
-                  className="w-14 border border-ink/30 bg-white/40 px-2 py-1 text-center text-xs text-ink"
-                  inputMode="numeric"
-                />
-                <button
-                  type="button"
-                  onClick={() => {
-                    const deg = Number(rotateInput);
-                    if (!Number.isFinite(deg)) return;
-                    rotateObstacleByKey(selectedObstacle, deg);
-                  }}
-                  className="game-action-btn text-xs"
-                >
-                  角度套用
-                </button>
-              </div>
-            </div>
-          ) : null}
+      {status ? (
+        <div className="flex shrink-0 items-center justify-center px-3 pb-2 text-xs game-message">
+          <span>{status}</span>
         </div>
       ) : null}
 
@@ -1182,10 +921,23 @@ export default function PinballGame() {
         lotteryYuan={roundEnd?.lotteryYuan ?? 0}
         tokens={tokens}
         onPlayAgain={() => {
+          clearStallRoundDismissed("pinball");
           if (!trySpendPlayCost()) return;
           resetGameRef.current();
         }}
-        onReturnToMarket={() => returnToMarketAfterRound(router)}
+        onReturnToMarket={() => {
+          const score = roundEnd?.score ?? 0;
+          returnToMarketAfterRound(
+            router,
+            { stallId: "pinball", score },
+            () => {
+              gameOverRef.current = false;
+              roundEndHandledRef.current = false;
+              setGameOver(false);
+              setRoundEnd(null);
+            },
+          );
+        }}
       />
     </main>
   );

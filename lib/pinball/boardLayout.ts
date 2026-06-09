@@ -143,11 +143,14 @@ export function channelLaneFromX(x: number) {
   return CHANNEL_LANE_COUNT - 1;
 }
 
+/** 通道內堆疊彈珠的額外垂直間距 */
+export const CHANNEL_STACK_EXTRA_PADDING = 5;
+
 /** 底部黃圈落點：stackIndex 0 最底，最多 CHANNEL_STACK_MAX 顆 */
 export function channelBallY(stackIndex: number, ballRadius: number) {
   const idx = Math.min(stackIndex, CHANNEL_STACK_MAX - 1);
   const baseY = PLAYFIELD.channelBottom - ballRadius;
-  const step = ballRadius * 1.72 + 5;
+  const step = ballRadius * 1.72 + 5 + CHANNEL_STACK_EXTRA_PADDING;
   return baseY - idx * step;
 }
 

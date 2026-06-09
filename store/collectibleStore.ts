@@ -25,6 +25,7 @@
 
 "use client";
 
+import { usePlayerStore } from "@/store/playerStore";
 import { create } from "zustand";
 import { collectiblesDefault, getCollectibleDef } from "@/data/collectibles-default";
 import type {
@@ -68,6 +69,11 @@ function savePersisted(data: Persisted) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
 }
 
+function persistAndSync(data: Persisted) {
+  savePersisted(data);
+  usePlayerStore.getState().scheduleCloudSnapshot();
+}
+
 type CollectibleStore = {
   hydrated: boolean;
   /** 已取得物品的 id 清單 */
@@ -94,6 +100,8 @@ type CollectibleStore = {
    * skipDialogue：離開夜市撿氛圍物時不彈出取得對話，改由結局演出。
    */
   tryAcquire: (id: CollectibleId, options?: { skipDialogue?: boolean }) => AcquireCollectibleResult;
+  /** 消耗一次性道具（如套圈圈使用的彈珠） */
+  consumeItem: (id: CollectibleId) => boolean;
 
   advanceAcquireDialogue: () => void;
   dismissAcquireDialogue: () => void;
@@ -170,9 +178,19 @@ export const useCollectibleStore = create<CollectibleStore>((set, get) => ({
     });
 
     const p = loadPersisted();
-    savePersisted({ ...p, acquired });
+    persistAndSync({ ...p, acquired });
 
     return { success: true, itemId: id };
+  },
+
+  consumeItem: (id) => {
+    if (!get().acquired.includes(id)) return false;
+    const acquired = get().acquired.filter((x) => x !== id);
+    const nextSelected = get().selectedId === id ? null : get().selectedId;
+    set({ acquired, selectedId: nextSelected });
+    const p = loadPersisted();
+    persistAndSync({ ...p, acquired });
+    return true;
   },
 
   advanceAcquireDialogue: () => {

@@ -12,6 +12,7 @@ import {
   type MutableRefObject,
 } from "react";
 import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
 import DialoguePanel from "@/components/narrative/DialoguePanel";
 import SceneCaption from "@/components/narrative/SceneCaption";
 import StallStoryModal from "./StallStoryModal";
@@ -21,6 +22,7 @@ import LeaveMarketModal from "./LeaveMarketModal";
 import TokenDisplay from "@/components/economy/TokenDisplay";
 import PointCardPickupBar from "./PointCardPickupBar";
 import LotteryPickupBar from "./LotteryPickupBar";
+import CharmPickupBar from "./CharmPickupBar";
 import HubPlayer from "./HubPlayer";
 import HubShadowEditorPanel from "./HubShadowEditorPanel";
 import { narrativeDefault } from "@/data/narrative-default";
@@ -55,14 +57,17 @@ import {
   readHubPlayerPosition,
   saveHubPlayerPosition,
 } from "@/lib/market/hubPlayerPosition";
-import { createHubSoundFx, type HubSoundFx } from "@/lib/market/hubSounds";
+import { createHubSoundFx, stopHubBgm, type HubSoundFx } from "@/lib/market/hubSounds";
+import { resolveCharmWorldPositions } from "@/lib/market/charmSpawnPlacement";
 import { loadLotteryFrontMask } from "@/lib/market/lotteryFrontMask";
 import type { StallId } from "@/lib/narrative/types";
-import { useStoryKeyAdvance } from "@/lib/useStoryKeyAdvance";
+import { useStoryAdvance } from "@/lib/useStoryAdvance";
+import { navigateWithFade } from "@/lib/navigation/navigateWithFade";
 import { usePageFadeIn } from "@/lib/navigation/usePageFadeIn";
 import { isAcquireSequenceBlocking } from "@/lib/collectibles/acquireSequence";
 import { useCollectibleStore } from "@/store/collectibleStore";
 import { useNarrativeStore } from "@/store/narrativeStore";
+import { usePlayerStore } from "@/store/playerStore";
 import { useTokenStore } from "@/store/tokenStore";
 
 const REQUIRED_STALLS = 4;
@@ -89,6 +94,8 @@ function clamp(v: number, min: number, max: number) {
 }
 
 export default function NightMarketHub() {
+  const router = useRouter();
+  const pathname = usePathname();
   const hydrate = useNarrativeStore((s) => s.hydrate);
   const hydrated = useNarrativeStore((s) => s.hydrated);
   const marketOpeningDone = useNarrativeStore((s) => s.marketOpeningDone);
@@ -101,11 +108,11 @@ export default function NightMarketHub() {
   const hasPointCard = useCollectibleStore((s) => s.hasAcquired("point-card"));
   const hydrateCollectibles = useCollectibleStore((s) => s.hydrate);
   const collectiblesHydrated = useCollectibleStore((s) => s.hydrated);
-  const nextBoundaryLine = useNarrativeStore((s) => s.nextBoundaryLine);
   const getText = useNarrativeStore((s) => s.getText);
   const hydrateTokens = useTokenStore((s) => s.hydrate);
   const tokensHydrated = useTokenStore((s) => s.hydrated);
   const roadSpawns = useTokenStore((s) => s.roadSpawns);
+  const charmSpawns = useNarrativeStore((s) => s.charmSpawns);
 
   usePageFadeIn();
 
@@ -145,7 +152,7 @@ export default function NightMarketHub() {
   const movedMsRef = useRef(0);
   const dragRef = useRef<{ active: boolean; lastX: number }>({ active: false, lastX: 0 });
   const sfxRef = useRef<HubSoundFx | null>(null);
-  const spawnSyncedRef = useRef(false);
+  const skipNextSaveRef = useRef(true);
   const playerAnimRef = useRef<{ facing: "left" | "right"; walking: boolean }>({
     facing: "right",
     walking: false,
@@ -157,6 +164,7 @@ export default function NightMarketHub() {
   const [selectedShadowId, setSelectedShadowId] = useState<string | null>(null);
   const [shadowEditorStatus, setShadowEditorStatus] = useState<string | null>(null);
   const [shadowSaving, setShadowSaving] = useState(false);
+  const [charmWorldX, setCharmWorldX] = useState<Record<string, number>>({});
 
   const updatePlayerAnim = useCallback(
     (facing: "left" | "right", walking: boolean) => {
@@ -211,13 +219,16 @@ export default function NightMarketHub() {
   }, []);
 
   useEffect(() => {
-    if (spawnSyncedRef.current) return;
+    if (pathname !== "/market") return;
     setPlayerX(resolveSpawnX());
-    spawnSyncedRef.current = true;
-  }, [resolveSpawnX]);
+    skipNextSaveRef.current = true;
+  }, [pathname, resolveSpawnX]);
 
   useEffect(() => {
-    if (!spawnSyncedRef.current) return;
+    if (skipNextSaveRef.current) {
+      skipNextSaveRef.current = false;
+      return;
+    }
     saveHubPlayerPosition(playerX, metrics.worldWidth);
   }, [playerX, metrics.worldWidth]);
 
@@ -287,6 +298,10 @@ export default function NightMarketHub() {
   }, []);
 
   useEffect(() => {
+    void usePlayerStore.getState().flushActiveSaveToCloud();
+  }, []);
+
+  useEffect(() => {
     sfxRef.current?.setWalking(playerAnim.walking);
   }, [playerAnim.walking]);
 
@@ -323,21 +338,17 @@ export default function NightMarketHub() {
     (nextX: number) => {
       const min = metrics.playerMinX;
       const max = metrics.playerMaxX;
-      if (nextX < min) {
-        setBoundaryMsg(nextBoundaryLine());
-        return min;
-      }
-      if (nextX > max) {
+      if (nextX < min || nextX > max) {
         if (!allStallsPlayed) {
           setBoundaryMsg("四個攤位都還沒玩完，現在還不能離開夜市。");
-          return max;
+          return nextX < min ? min : max;
         }
         setLeavePrompt(true);
-        return max;
+        return nextX < min ? min : max;
       }
       return nextX;
     },
-    [metrics.playerMinX, metrics.playerMaxX, nextBoundaryLine, allStallsPlayed],
+    [metrics.playerMinX, metrics.playerMaxX, allStallsPlayed],
   );
 
   useEffect(() => {
@@ -406,9 +417,9 @@ export default function NightMarketHub() {
     }
   };
 
-  useStoryKeyAdvance(opening && openingLine ? advanceOpening : undefined, opening);
+  useStoryAdvance(opening && openingLine ? advanceOpening : undefined, opening);
 
-  useStoryKeyAdvance(
+  useStoryAdvance(
     boundaryMsg ? () => setBoundaryMsg(null) : undefined,
     Boolean(boundaryMsg),
   );
@@ -473,13 +484,56 @@ export default function NightMarketHub() {
     return nearest?.spawn ?? null;
   }, [tokensHydrated, roadSpawns, computeLotteryGroundPos, playerX]);
 
+  useEffect(() => {
+    if (!hydrated || charmSpawns.length === 0) {
+      setCharmWorldX({});
+      return;
+    }
+
+    let cancelled = false;
+    void resolveCharmWorldPositions(charmSpawns, metrics, shadowPlacements).then(
+      (positions) => {
+        if (!cancelled) setCharmWorldX(positions);
+      },
+    );
+
+    return () => {
+      cancelled = true;
+    };
+  }, [hydrated, charmSpawns, metrics, shadowPlacements]);
+
+  const activeCharmSpawn = useMemo(() => {
+    if (!hydrated || charmSpawns.length === 0) return null;
+    let nearest: { spawn: (typeof charmSpawns)[number]; dist: number } | null = null;
+    for (const spawn of charmSpawns) {
+      const worldX = charmWorldX[spawn.id];
+      if (worldX == null) continue;
+      const dist = Math.abs(worldX - playerX);
+      if (dist > LOTTERY_PICKUP_RANGE_PX) continue;
+      if (!nearest || dist < nearest.dist) {
+        nearest = { spawn, dist };
+      }
+    }
+    return nearest?.spawn ?? null;
+  }, [hydrated, charmSpawns, charmWorldX, playerX]);
+
+  const charmNear = Boolean(
+    activeCharmSpawn &&
+    !storyStallId &&
+    !howToStallId &&
+    !opening &&
+    !boundaryMsg &&
+    !leavePrompt,
+  );
+
   const lotteryNear = Boolean(
     activeLotterySpawn &&
     !storyStallId &&
     !howToStallId &&
     !opening &&
     !boundaryMsg &&
-    !leavePrompt,
+    !leavePrompt &&
+    !charmNear,
   );
 
   const pointCardStallId =
@@ -514,6 +568,8 @@ export default function NightMarketHub() {
   const showPointCardPickup = pointCardInteractable && pointCardIsNear;
   const pointCardNear = showPointCardPickup;
 
+  const groundPickupActive = lotteryNear || charmNear || showPointCardPickup;
+
   const enterBarActive = Boolean(
     nearStallId &&
     hasVisitedStall(nearStallId) &&
@@ -522,8 +578,8 @@ export default function NightMarketHub() {
     !opening &&
     !boundaryMsg &&
     !leavePrompt &&
-    !showPointCardPickup &&
-    !lotteryNear,
+    !groundPickupActive &&
+    !acquireSequenceBlocking,
   );
 
   useEffect(() => {
@@ -557,11 +613,24 @@ export default function NightMarketHub() {
     "--player-floor": PLAYER_FLOOR_RATIO,
   } as CSSProperties;
 
+  const goHome = useCallback(async () => {
+    await usePlayerStore.getState().flushActiveSaveToCloud();
+    stopHubBgm();
+    await navigateWithFade(router, "/");
+  }, [router]);
+
   return (
     <div className="hub-shell h-screen flex flex-col overflow-hidden">
       {!opening ? (
         <header className="game-header shrink-0 flex items-center justify-between px-4 py-2">
-          <span className="game-title text-sm sm:text-lg">無人夜市</span>
+          <button
+            type="button"
+            className="game-btn-ghost hub-header-action text-xs"
+            data-ui-sound="enter"
+            onClick={() => void goHome()}
+          >
+            回主畫面
+          </button>
           <div className="relative flex gap-2 items-center">
             <TokenDisplay />
             <Link
@@ -636,6 +705,28 @@ export default function NightMarketHub() {
               })
             : null}
 
+          {hydrated
+            ? charmSpawns.map((spawn) => {
+                const worldX = charmWorldX[spawn.id];
+                if (worldX == null) return null;
+                const groundY = lotteryGroundY(metrics);
+                const isNearThis = isPlayerNearLotterySpawn(playerX, worldX);
+                const isActiveSpawn = activeCharmSpawn?.id === spawn.id;
+                const showPickup = charmNear && isNearThis && isActiveSpawn;
+                const glowing = isNearThis && isActiveSpawn;
+                return (
+                  <CharmPickupBar
+                    key={spawn.id}
+                    spawn={spawn}
+                    worldX={worldX}
+                    groundY={groundY}
+                    glowing={glowing}
+                    visible={showPickup}
+                  />
+                );
+              })
+            : null}
+
           {pointCardGroundPos ? (
             <PointCardPickupBar
               worldX={pointCardGroundPos.worldX}
@@ -664,7 +755,7 @@ export default function NightMarketHub() {
             />
           </Suspense>
 
-          {enterBarStallId && displayedEnterBarPos && (
+          {enterBarStallId && displayedEnterBarPos && !groundPickupActive && (
             <StallEnterBar
               stallId={enterBarStallId}
               playerX={playerX}
@@ -673,6 +764,7 @@ export default function NightMarketHub() {
               worldY={displayedEnterBarPos.worldY}
               zIndex={ENTER_BAR_Z_INDEX}
               visible={enterBarVisible}
+              interactionDisabled={acquireSequenceBlocking}
               onFadeOutComplete={() => setEnterBarStallId(null)}
               onEnterGame={setHowToStallId}
             />
@@ -758,7 +850,6 @@ export default function NightMarketHub() {
                   id="boundary-toast"
                   speaker="主角"
                   text={boundaryMsg}
-                  onAdvance={() => setBoundaryMsg(null)}
                 />
               </div>
             )}
@@ -801,7 +892,7 @@ export default function NightMarketHub() {
         ) : null}
 
         {opening && openingLine ? (
-          <div className="absolute inset-0 z-50 overflow-hidden">
+          <div className="absolute inset-0 z-50 overflow-hidden cursor-default">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={HUB_BACKGROUND}
@@ -827,15 +918,10 @@ export default function NightMarketHub() {
                   id={openingLine.id}
                   speaker={openingLine.speaker}
                   text={openingLine.text}
-                  onAdvance={advanceOpening}
                 />
               )}
               {openingLine.type === "caption" && (
-                <SceneCaption
-                  id={openingLine.id}
-                  text={openingLine.text}
-                  onDismiss={advanceOpening}
-                />
+                <SceneCaption id={openingLine.id} text={openingLine.text} />
               )}
             </div>
           </div>

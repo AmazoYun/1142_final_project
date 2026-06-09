@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { usePathname } from "next/navigation";
+import { useGameLoadingStore } from "@/store/gameLoadingStore";
 import { useTransitionStore } from "@/store/transitionStore";
 
 export default function PageFadeOverlay() {
@@ -10,6 +11,7 @@ export default function PageFadeOverlay() {
 
   useEffect(() => {
     const id = window.requestAnimationFrame(() => {
+      if (useGameLoadingStore.getState().visible) return;
       useTransitionStore.getState().fadeIn();
     });
     return () => window.cancelAnimationFrame(id);

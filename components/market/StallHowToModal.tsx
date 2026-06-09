@@ -42,7 +42,18 @@ export default function StallHowToModal({ script, playerX, worldWidth, onClose }
       <ScoreBoardPanel variant="modal" className="relative max-w-lg w-full">
         <div className="space-y-4">
           <h2 className="score-board-panel__title">{script.title}</h2>
-          <p className="score-board-panel__body whitespace-pre-line">{script.howToPlay}</p>
+          <div className="score-board-panel__body stall-how-to space-y-3">
+            {script.howToPlay.map((section) => (
+              <section key={section.title}>
+                <h3 className="stall-how-to__heading">{section.title}</h3>
+                <ul className="stall-how-to__list">
+                  {section.items.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              </section>
+            ))}
+          </div>
           <div className="flex gap-3 justify-center">
             <ScoreBoardWoodButton muted onClick={onClose}>
               返回夜市

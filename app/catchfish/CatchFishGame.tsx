@@ -4,13 +4,26 @@ import { useRouter } from "next/navigation";
 import React, { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import CatchfishNetHud from "@/components/catchfish/CatchfishNetHud";
 import GameHudBar from "@/components/game/GameHudBar";
+import GamePageHeader from "@/components/game/GamePageHeader";
+import {
+  GameRoundActiveProvider,
+  useGameRoundActive,
+} from "@/components/game/GameRoundActiveContext";
+import { narrativeDefault } from "@/data/narrative-default";
 import GameRoundEndModal from "@/components/game/GameRoundEndModal";
 import { awardStallReward } from "@/lib/collectibles/awardStallReward";
-import { returnToMarketAfterRound } from "@/lib/economy/returnToMarket";
+import { STALL_REWARD } from "@/lib/collectibles/stallRewards";
+import { isGameInputBlocked } from "@/lib/collectibles/isGameInputBlocked";
+import {
+  navigateToMarketFromGame,
+  returnToMarketAfterRound,
+} from "@/lib/economy/returnToMarket";
 import { finalizeGameRound } from "@/lib/economy/processRoundEnd";
 import { trySpendPlayCost } from "@/lib/economy/playGame";
 import { navigateWithFade } from "@/lib/navigation/navigateWithFade";
 import { usePageFadeIn } from "@/lib/navigation/usePageFadeIn";
+import { clearStallRoundDismissed } from "@/lib/game/stallRoundLeave";
+import { useStallRoundEndLeave } from "@/lib/game/useStallRoundEndLeave";
 import { reportStallScore } from "@/lib/player/reportStallScore";
 import { useTokenStore } from "@/store/tokenStore";
 import { loadCatchFishAssets, type LoadedCatchFishAssets } from "@/lib/catchfish/assets";
@@ -20,7 +33,10 @@ import {
   createCatchAnimation,
   type CatchAnimation,
 } from "@/lib/catchfish/catchAnimation";
-import type { CaughtFishDisplay } from "@/lib/catchfish/caughtDisplay";
+import {
+  relayoutCaughtFishStack,
+  type CaughtFishDisplay,
+} from "@/lib/catchfish/caughtDisplay";
 import {
   createEscapeAnimation,
   escapeAnimPose,
@@ -33,8 +49,19 @@ import {
   drawScoopProgressBar,
 } from "@/lib/catchfish/drawSprites";
 import { CatchFishEffects } from "@/lib/catchfish/effects";
-import { createCatchFishSoundFx, type CatchFishSoundFx } from "@/lib/catchfish/sounds";
+import {
+  createCatchFishAmbientSfx,
+  createCatchFishSoundFx,
+  type CatchFishSoundFx,
+} from "@/lib/catchfish/sounds";
+import { playImpactSound } from "@/lib/sfx/randomSfx";
 import { netArenaMargin, pickFishSpriteIndex } from "@/lib/catchfish/spriteMeta";
+import {
+  canThrowBackCaught,
+  findLargeCaughtFishAt,
+  isLargeCaughtFish,
+  isPointInThrowBackPool,
+} from "@/lib/catchfish/throwBack";
 import {
   catchDurabilityCost,
   FLEE_DELAY_SEC,
@@ -55,6 +82,7 @@ import {
   randomPointsForSize,
   useGameStore,
 } from "@/store/gameStore";
+import { useCollectibleStore } from "@/store/collectibleStore";
 
 /**
  * ============================================================================
@@ -131,6 +159,8 @@ type Fish = {
   wanderTimer: number;
   wanderOffset: number;
   scoopStruggle: number;
+  prevX: number;
+  prevY: number;
 };
 
 type ScoopState = {
@@ -250,6 +280,14 @@ function useGameSelector<T>(selector: (s: ReturnType<typeof useGameStore.getStat
 // =============================================================================
 
 export default function CatchFishGame() {
+  return (
+    <GameRoundActiveProvider>
+      <CatchFishGameInner />
+    </GameRoundActiveProvider>
+  );
+}
+
+function CatchFishGameInner() {
   const router = useRouter();
   usePageFadeIn();
 
@@ -279,6 +317,10 @@ export default function CatchFishGame() {
   const effectsRef = useRef(new CatchFishEffects());
   const onNetBreakEndRef = useRef<() => void>(() => {});
   const catchfishRewardGrantedRef = useRef(false);
+  const catchfishExitPendingRef = useRef(false);
+  const throwBackSequenceRef = useRef(false);
+  const bloodyAlphaRef = useRef(0);
+  const bloodyFadeStartRef = useRef<number | null>(null);
   const largeFishCaughtRef = useRef(0);
   const totalFishCaughtRef = useRef(0);
   const sevenFishBonusGivenRef = useRef(false);
@@ -291,6 +333,16 @@ export default function CatchFishGame() {
   const [loadedAssets, setLoadedAssets] = useState<LoadedCatchFishAssets | null>(null);
   const [breakingSlot, setBreakingSlot] = useState<number | null>(null);
   const [showReplaceToast, setShowReplaceToast] = useState(false);
+  const [throwBackReady, setThrowBackReady] = useState(false);
+  const [throwBackExit, setThrowBackExit] = useState(false);
+  const [darkRedUiAlpha, setDarkRedUiAlpha] = useState(0);
+  const throwDragRef = useRef<{ fishIndex: number; x: number; y: number } | null>(null);
+  const collectiblesHydrated = useCollectibleStore((s) => s.hydrated);
+  const acquired = useCollectibleStore((s) => s.acquired);
+  const hasCatchfishReward = useCollectibleStore((s) => s.hasAcquired(STALL_REWARD.catchfish));
+  const pendingAcquireDialogue = useCollectibleStore((s) => s.pendingAcquireDialogue);
+  const pendingAcquireAnimation = useCollectibleStore((s) => s.pendingAcquireAnimation);
+  const { setRoundActive } = useGameRoundActive();
 
   /**
    * statusRef — 鏡像 store.status，供 RAF 內的 update() 讀取
@@ -308,6 +360,11 @@ export default function CatchFishGame() {
   const durability = useGameSelector((s) => s.durability);
   const netsRemaining = useGameSelector((s) => s.netsRemaining);
   const status = useGameSelector((s) => s.status);
+
+  useEffect(() => {
+    setRoundActive(status === "playing" && !throwBackExit);
+  }, [status, throwBackExit, setRoundActive]);
+
   const startGame = useGameStore((s) => s.startGame);
   const resetToIdle = useGameStore((s) => s.resetToIdle);
   const clearNetReplacedMessage = useGameStore((s) => s.clearNetReplacedMessage);
@@ -327,6 +384,7 @@ export default function CatchFishGame() {
 
   useEffect(() => {
     if (status !== "gameover") return;
+    if (throwBackExit) return;
     const finalScore = useGameStore.getState().score;
     reportStallScore("catchfish", finalScore);
     if (!roundEndHandledRef.current) {
@@ -334,18 +392,56 @@ export default function CatchFishGame() {
       const summary = finalizeGameRound(finalScore);
       setRoundEnd({ score: summary.score, lotteryYuan: summary.lotteryYuan });
     }
-  }, [status]);
+  }, [status, throwBackExit]);
+
+  useEffect(() => {
+    if (!catchfishExitPendingRef.current) return;
+    if (pendingAcquireDialogue) return;
+    if (pendingAcquireAnimation?.mode === "acquire") return;
+    catchfishExitPendingRef.current = false;
+    void navigateToMarketFromGame(router);
+  }, [pendingAcquireDialogue, pendingAcquireAnimation, router]);
 
   useEffect(() => {
     document.title = "撈金魚｜無人夜市";
   }, []);
 
   useEffect(() => {
+    useCollectibleStore.getState().hydrate();
+  }, []);
+
+  const syncThrowBackReady = () => {
+    if (hasCatchfishReward) {
+      setThrowBackReady(false);
+      return;
+    }
+    const stage = containerRef.current;
+    if (stage && caughtDisplayRef.current.length > 0) {
+      const { width: cw, height: ch } = stage.getBoundingClientRect();
+      if (cw > 0 && ch > 0) {
+        relayoutCaughtFishStack(caughtDisplayRef.current, cw, ch);
+      }
+    }
+    setThrowBackReady(
+      canThrowBackCaught(caughtDisplayRef.current, catchfishRewardGrantedRef.current),
+    );
+  };
+
+  useEffect(() => {
+    if (!collectiblesHydrated) return;
+    syncThrowBackReady();
+  }, [collectiblesHydrated, acquired, hasCatchfishReward]);
+
+  useEffect(() => {
     const sfx = createCatchFishSoundFx();
+    const ambient = createCatchFishAmbientSfx();
     sfxRef.current = sfx;
     sfx.preload();
+    ambient.preload();
+    ambient.start();
     return () => {
       sfx.dispose();
+      ambient.dispose();
       sfxRef.current = null;
     };
   }, []);
@@ -381,8 +477,15 @@ export default function CatchFishGame() {
   }, [loadedAssets, startGame, status]);
 
   /** 開始／再玩：先重置 Zustand，再重置 Canvas 魚群與撈網位置 */
-  const handleStart = () => {
+  const dismissRoundEndUi = () => {
     catchfishRewardGrantedRef.current = false;
+    catchfishExitPendingRef.current = false;
+    throwBackSequenceRef.current = false;
+    bloodyAlphaRef.current = 0;
+    bloodyFadeStartRef.current = null;
+    setDarkRedUiAlpha(0);
+    setThrowBackExit(false);
+    setThrowBackReady(false);
     largeFishCaughtRef.current = 0;
     totalFishCaughtRef.current = 0;
     sevenFishBonusGivenRef.current = false;
@@ -392,14 +495,42 @@ export default function CatchFishGame() {
     resetGameRef.current();
   };
 
+  const handleStart = () => {
+    catchfishRewardGrantedRef.current = false;
+    catchfishExitPendingRef.current = false;
+    throwBackSequenceRef.current = false;
+    bloodyAlphaRef.current = 0;
+    bloodyFadeStartRef.current = null;
+    setDarkRedUiAlpha(0);
+    setThrowBackExit(false);
+    setThrowBackReady(false);
+    largeFishCaughtRef.current = 0;
+    totalFishCaughtRef.current = 0;
+    sevenFishBonusGivenRef.current = false;
+    roundEndHandledRef.current = false;
+    setRoundEnd(null);
+    startGame();
+    resetGameRef.current();
+  };
+
+  const isGameOver = status === "gameover";
+
+  useStallRoundEndLeave(
+    "catchfish",
+    isGameOver && roundEnd !== null && !throwBackExit,
+    dismissRoundEndUi,
+  );
+
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      if (isGameInputBlocked()) return;
       if (e.code === "Space" || e.key === " ") {
         e.preventDefault();
         spaceHeldRef.current = true;
       }
     };
     const onKeyUp = (e: KeyboardEvent) => {
+      if (isGameInputBlocked()) return;
       if (e.code === "Space" || e.key === " ") {
         spaceHeldRef.current = false;
       }
@@ -443,6 +574,9 @@ export default function CatchFishGame() {
       // 圓形遊戲區：以 Canvas 中心為圓心，半徑取短邊一半再留邊距
       const arenaR = (Math.min(w, h) / 2 - 16) * ARENA_RADIUS_SCALE;
       arenaRef.current = { cx: w / 2, cy: h / 2, r: arenaR };
+      if (caughtDisplayRef.current.length > 0) {
+        relayoutCaughtFishStack(caughtDisplayRef.current, w, h);
+      }
     };
 
     resize();
@@ -486,19 +620,25 @@ export default function CatchFishGame() {
         wanderTimer: Math.random() * GAME_PARAMS.wanderIntervalMax,
         wanderOffset: (Math.random() - 0.5) * GAME_PARAMS.wanderJitter,
         scoopStruggle: 0,
+        prevX: x,
+        prevY: y,
       });
     };
 
     const fishInContact = (fish: Fish, netX: number, netY: number) =>
       Math.hypot(fish.x - netX, fish.y - netY) < GAME_PARAMS.catchRadius + fish.r * 0.85;
 
-    const tryAwardCatchfishReward = () => {
-      if (catchfishRewardGrantedRef.current) return;
-      if (largeFishCaughtRef.current < 3) return;
-      const reward = awardStallReward("catchfish");
-      if (reward.success) {
-        catchfishRewardGrantedRef.current = true;
+    const refreshThrowBackReady = () => {
+      if (useCollectibleStore.getState().hasAcquired(STALL_REWARD.catchfish)) {
+        setThrowBackReady(false);
+        return;
       }
+      if (caughtDisplayRef.current.length > 0) {
+        relayoutCaughtFishStack(caughtDisplayRef.current, w, h);
+      }
+      setThrowBackReady(
+        canThrowBackCaught(caughtDisplayRef.current, catchfishRewardGrantedRef.current),
+      );
     };
 
     const beginCatch = (fish: Fish) => {
@@ -552,6 +692,7 @@ export default function CatchFishGame() {
       caughtDisplayRef.current.push(catchAnimToDisplay(anim));
       replenishFish();
       catchAnimRef.current = null;
+      refreshThrowBackReady();
     };
 
     const updateCatchAnimation = (dt: number) => {
@@ -579,11 +720,9 @@ export default function CatchFishGame() {
       totalFishCaughtRef.current += 1;
       if (scoop.size === "large") {
         largeFishCaughtRef.current += 1;
-        tryAwardCatchfishReward();
       }
 
       let bonus = 0;
-      if (largeFishCaughtRef.current === 3) bonus += 100;
       if (totalFishCaughtRef.current > 7 && !sevenFishBonusGivenRef.current) {
         bonus += 50;
         sevenFishBonusGivenRef.current = true;
@@ -627,6 +766,12 @@ export default function CatchFishGame() {
       largeFishCaughtRef.current = 0;
       totalFishCaughtRef.current = 0;
       sevenFishBonusGivenRef.current = false;
+      bloodyAlphaRef.current = 0;
+      bloodyFadeStartRef.current = null;
+      throwBackSequenceRef.current = false;
+      setDarkRedUiAlpha(0);
+      setThrowBackReady(false);
+      throwDragRef.current = null;
       setBreakingSlot(null);
       setShowReplaceToast(false);
       for (let i = 0; i < GAME_PARAMS.initialFish; i++) spawnFish();
@@ -905,6 +1050,12 @@ export default function CatchFishGame() {
     const update = (dt: number) => {
       const wasNetBreaking = effects.isNetBreaking();
       effects.update(dt);
+      if (throwBackSequenceRef.current) {
+        if (wasNetBreaking && !effects.isNetBreaking()) {
+          onNetBreakEndRef.current();
+        }
+        return;
+      }
       updateEscapeAnimation(dt);
       updateCatchAnimation(dt);
       if (wasNetBreaking && !effects.isNetBreaking()) {
@@ -936,7 +1087,15 @@ export default function CatchFishGame() {
       const instantSpeed = Math.hypot(net.x - prevNetX, net.y - prevNetY) / dt;
       sfxRef.current?.maybePlayNetOnMove(instantSpeed);
 
-      for (const fish of fishRef.current) moveFish(fish, net.x, net.y, dt);
+      for (const fish of fishRef.current) {
+        const prevX = fish.prevX;
+        const prevY = fish.prevY;
+        moveFish(fish, net.x, net.y, dt);
+        const swimSpeed = Math.hypot(fish.x - prevX, fish.y - prevY) / dt;
+        sfxRef.current?.maybePlayFishOnFastSwim(swimSpeed);
+        fish.prevX = fish.x;
+        fish.prevY = fish.y;
+      }
       separateFish();
       updateScoop(net.x, net.y, dt);
     };
@@ -946,7 +1105,15 @@ export default function CatchFishGame() {
       lastT = now;
 
       ctx.clearRect(0, 0, w, h);
-      drawCatchFishBackground(ctx, assetsRef.current, w, h);
+      let fishFadeMul = 1;
+      if (bloodyFadeStartRef.current !== null) {
+        const elapsed = (now - bloodyFadeStartRef.current) / 1000;
+        const alpha = clamp(elapsed / 2, 0, 1);
+        bloodyAlphaRef.current = alpha;
+        fishFadeMul = 1 - alpha;
+        setDarkRedUiAlpha(clamp(alpha * 0.82, 0, 0.82));
+      }
+      drawCatchFishBackground(ctx, assetsRef.current, w, h, bloodyAlphaRef.current);
       effects.drawRipples(ctx);
 
       const netBreak = effects.netBreak;
@@ -977,7 +1144,7 @@ export default function CatchFishGame() {
 
         drawFishSprite(ctx, assetsRef.current, {
           ...fish,
-          alpha: fish.spawnAlpha,
+          alpha: fish.spawnAlpha * fishFadeMul,
           shakeX,
           shakeY,
         });
@@ -988,8 +1155,22 @@ export default function CatchFishGame() {
         if (fish) drawScoopProgressBar(ctx, fish.x, fish.y, fish.r, scoop.progress);
       }
 
-      for (const caught of caughtDisplayRef.current) {
-        drawFishSprite(ctx, assetsRef.current, caught);
+      const throwDrag = throwDragRef.current;
+      for (let i = 0; i < caughtDisplayRef.current.length; i++) {
+        const caught = caughtDisplayRef.current[i];
+        if (throwDrag && throwDrag.fishIndex === i) continue;
+        drawFishSprite(ctx, assetsRef.current, { ...caught, alpha: fishFadeMul });
+      }
+      if (throwDrag) {
+        const caught = caughtDisplayRef.current[throwDrag.fishIndex];
+        if (caught) {
+          drawFishSprite(ctx, assetsRef.current, {
+            ...caught,
+            x: throwDrag.x,
+            y: throwDrag.y,
+            alpha: fishFadeMul,
+          });
+        }
       }
 
       const catchAnim = catchAnimRef.current;
@@ -1002,6 +1183,7 @@ export default function CatchFishGame() {
           r: catchAnim.r,
           spriteIndex: catchAnim.spriteIndex,
           scaleMul: pose.scale,
+          alpha: fishFadeMul,
         });
       }
 
@@ -1015,7 +1197,7 @@ export default function CatchFishGame() {
           r: escapeAnim.r,
           spriteIndex: escapeAnim.spriteIndex,
           scaleMul: pose.scaleMul,
-          alpha: pose.alpha,
+          alpha: pose.alpha * fishFadeMul,
         });
       }
 
@@ -1038,35 +1220,124 @@ export default function CatchFishGame() {
    * onPointerMove — 將螢幕座標轉成 Canvas 內座標，寫入 net.targetX/Y
    * 注意：只設定「目標」，實際網位置由 update 的慣性計算，形成延遲感
    */
+  const canvasPoint = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return null;
+    const rect = canvas.getBoundingClientRect();
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  };
+
+  const onPointerDown: React.PointerEventHandler<HTMLCanvasElement> = (e) => {
+    if (status !== "playing" || !throwBackReady || throwBackExit || hasCatchfishReward) return;
+    const pt = canvasPoint(e);
+    if (!pt) return;
+    const idx = findLargeCaughtFishAt(pt.x, pt.y, caughtDisplayRef.current);
+    if (idx < 0) return;
+    e.preventDefault();
+    spaceHeldRef.current = false;
+    scoopRef.current = null;
+    sfxRef.current?.stopCatching();
+    canvasRef.current?.setPointerCapture(e.pointerId);
+    throwDragRef.current = { fishIndex: idx, x: pt.x, y: pt.y };
+  };
+
   const onPointerMove: React.PointerEventHandler<HTMLCanvasElement> = (e) => {
     const canvas = canvasRef.current;
-    if (!canvas || status !== "playing") return;
-    const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    const clamped = clampToCircle(x, y, arenaRef.current, netArenaMargin(GAME_PARAMS.catchRadius));
+    if (!canvas || status !== "playing" || throwBackExit) return;
+
+    if (throwDragRef.current) {
+      const pt = canvasPoint(e);
+      if (!pt) return;
+      throwDragRef.current.x = pt.x;
+      throwDragRef.current.y = pt.y;
+      return;
+    }
+
+    if (throwBackReady) return;
+
+    const pt = canvasPoint(e);
+    if (!pt) return;
+    const clamped = clampToCircle(pt.x, pt.y, arenaRef.current, netArenaMargin(GAME_PARAMS.catchRadius));
     netRef.current.targetX = clamped.x;
     netRef.current.targetY = clamped.y;
   };
 
+  const onPointerUp: React.PointerEventHandler<HTMLCanvasElement> = (e) => {
+    const drag = throwDragRef.current;
+    if (!drag) return;
+    throwDragRef.current = null;
+    canvasRef.current?.releasePointerCapture(e.pointerId);
 
-  const isGameOver = status === "gameover";
+    const pt = canvasPoint(e);
+    const stage = containerRef.current;
+    if (!pt || !throwBackReady || !stage) return;
+    const { width: cw, height: ch } = stage.getBoundingClientRect();
+    if (isPointInThrowBackPool(pt.x, pt.y, arenaRef.current, cw, ch)) {
+      handleThrowBackLargeFish(drag.fishIndex);
+    }
+  };
+
+  const onPointerCancel: React.PointerEventHandler<HTMLCanvasElement> = () => {
+    throwDragRef.current = null;
+  };
+
+  const handleThrowBackLargeFish = (fishIndex?: number) => {
+    if (!throwBackReady || catchfishRewardGrantedRef.current || hasCatchfishReward) return;
+    const idx =
+      fishIndex ??
+      caughtDisplayRef.current.findIndex((c) => isLargeCaughtFish(c.r));
+    if (idx < 0 || !isLargeCaughtFish(caughtDisplayRef.current[idx]?.r ?? 0)) return;
+
+    const thrown = caughtDisplayRef.current[idx];
+    caughtDisplayRef.current.splice(idx, 1);
+    playImpactSound();
+    setThrowBackReady(false);
+    setThrowBackExit(true);
+    throwBackSequenceRef.current = true;
+    roundEndHandledRef.current = true;
+    scoopRef.current = null;
+    catchAnimRef.current = null;
+    escapeAnimRef.current = null;
+    sfxRef.current?.stopCatching();
+    useGameStore.setState({ score: 0 });
+    if (thrown) {
+      effectsRef.current.addSplash(thrown.x, thrown.y, 12);
+    }
+    bloodyFadeStartRef.current = performance.now();
+    bloodyAlphaRef.current = 0;
+    setDarkRedUiAlpha(0);
+
+    window.setTimeout(() => {
+      if (catchfishRewardGrantedRef.current) return;
+      const reward = awardStallReward("catchfish");
+      if (reward.success) {
+        catchfishRewardGrantedRef.current = true;
+        catchfishExitPendingRef.current = true;
+      }
+    }, 4000);
+  };
 
   return (
-    <div ref={containerRef} className="catchfish-stage">
+    <div className="catchfish-fullscreen">
+      {darkRedUiAlpha > 0 ? (
+        <div
+          className="catchfish-darkred-overlay"
+          style={{ opacity: darkRedUiAlpha }}
+          aria-hidden
+        />
+      ) : null}
+
+      <GamePageHeader title={narrativeDefault.stalls.catchfish.title} />
+
+      <div ref={containerRef} className="catchfish-stage">
       <canvas
         ref={canvasRef}
-        className="catchfish-stage__canvas"
+        className={`catchfish-stage__canvas${throwBackReady ? " catchfish-stage__canvas--throwback" : ""}`}
+        onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerCancel}
       />
-
-      <button
-        type="button"
-        className="catchfish-back-link"
-        onClick={() => void navigateWithFade(router, "/market")}
-      >
-        ← 返回夜市
-      </button>
 
       <GameHudBar
         score={score}
@@ -1088,17 +1359,35 @@ export default function CatchFishGame() {
         </div>
       )}
 
+      {throwBackReady ? (
+        <div className="catchfish-throwback-hint" role="status">
+          拖曳右側大魚丟回池中
+        </div>
+      ) : null}
+
       <GameRoundEndModal
-        open={isGameOver && roundEnd !== null}
+        open={isGameOver && roundEnd !== null && !throwBackExit}
         score={roundEnd?.score ?? 0}
         lotteryYuan={roundEnd?.lotteryYuan ?? 0}
         tokens={tokens}
         onPlayAgain={() => {
+          clearStallRoundDismissed("catchfish");
           if (!trySpendPlayCost()) return;
           handleStart();
         }}
-        onReturnToMarket={() => returnToMarketAfterRound(router)}
+        onReturnToMarket={() => {
+          const score = roundEnd?.score ?? 0;
+          returnToMarketAfterRound(
+            router,
+            { stallId: "catchfish", score },
+            () => {
+              roundEndHandledRef.current = false;
+              setRoundEnd(null);
+            },
+          );
+        }}
       />
+      </div>
     </div>
   );
 }

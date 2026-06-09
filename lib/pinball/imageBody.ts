@@ -163,7 +163,7 @@ export function collideBallWithSegment(
   const offX = ballPos.x - cx;
   const offY = ballPos.y - cy;
   const dist = Math.hypot(offX, offY);
-  const pad = ballRadius + 1.2;
+  const pad = ballRadius + 1.6;
   if (dist >= pad) return null;
   const len = dist || 1;
   const nx = offX / len;
@@ -198,12 +198,13 @@ export function collideBallWithImageBody(
   body: ImageBody,
   placed: PlacedImage,
   restitution = 0.94,
-): { hit: boolean; pos: Vec; vel: Vec; contact: Vec } {
+): { hit: boolean; pos: Vec; vel: Vec; contact: Vec; normal: Vec } {
   let best: {
     dist: number;
     pos: Vec;
     vel: Vec;
     contact: Vec;
+    normal: Vec;
   } | null = null;
 
   for (const ws of worldEdges(body, placed)) {
@@ -220,13 +221,14 @@ export function collideBallWithImageBody(
         y: (ballVel.y - 2 * d * res.normal.y) * restitution,
       },
       contact: res.contact,
+      normal: res.normal,
     };
   }
 
   if (!best) {
-    return { hit: false, pos: ballPos, vel: ballVel, contact: ballPos };
+    return { hit: false, pos: ballPos, vel: ballVel, contact: ballPos, normal: { x: 0, y: -1 } };
   }
-  return { hit: true, pos: best.pos, vel: best.vel, contact: best.contact };
+  return { hit: true, pos: best.pos, vel: best.vel, contact: best.contact, normal: best.normal };
 }
 
 /** 指標是否落在不透明像素上（編輯選取用） */

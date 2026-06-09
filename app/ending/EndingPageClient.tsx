@@ -1,20 +1,31 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import StorySequencePlayer from "@/components/narrative/StorySequencePlayer";
 import { getEndingScript } from "@/data/endings-default";
 import { prepareItemsForLeave } from "@/lib/endings/prepareLeave";
+import { fadeOutMainBgm, startMainBgm, stopHubBgm } from "@/lib/market/hubSounds";
 import { navigateWithFade } from "@/lib/navigation/navigateWithFade";
 import { usePageFadeIn } from "@/lib/navigation/usePageFadeIn";
 import type { EndingId } from "@/lib/endings/types";
 import { usePlayerStore } from "@/store/playerStore";
 import { useNarrativeStore } from "@/store/narrativeStore";
 
+const ENDING_FADE_MS = 1200;
+
+function parsePreviewEndingId(raw: string | null): EndingId | null {
+  if (!raw) return null;
+  const script = getEndingScript(raw);
+  return script ? (raw as EndingId) : null;
+}
+
 export default function EndingPageClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const loopRestart = searchParams.get("loop") === "1";
+  const previewEndingId = parsePreviewEndingId(searchParams.get("preview"));
+  const isPreview = previewEndingId !== null;
   const hydrate = useNarrativeStore((s) => s.hydrate);
   const markEndingSeen = useNarrativeStore((s) => s.markEndingSeen);
   const replayIntro = useNarrativeStore((s) => s.replayIntro);
@@ -24,13 +35,24 @@ export default function EndingPageClient() {
   usePageFadeIn();
 
   const [endingId, setEndingId] = useState<EndingId | null>(
-    loopRestart ? "loop" : null,
+    loopRestart ? "loop" : previewEndingId,
   );
   const [playing, setPlaying] = useState(true);
+  const [fadingOut, setFadingOut] = useState(false);
+  const onCompleteCalledRef = useRef(false);
+
+  useEffect(() => {
+    stopHubBgm();
+    startMainBgm();
+  }, []);
 
   useEffect(() => {
     hydrate();
     hydratePlayers();
+    if (isPreview) {
+      setEndingId(previewEndingId);
+      return;
+    }
     if (loopRestart) {
       markEndingSeen("loop");
       return;
@@ -39,19 +61,50 @@ export default function EndingPageClient() {
     setEndingId(id);
     markEndingSeen(id);
     finishRun(id);
-  }, [hydrate, hydratePlayers, loopRestart, markEndingSeen, finishRun]);
+  }, [
+    hydrate,
+    hydratePlayers,
+    isPreview,
+    previewEndingId,
+    loopRestart,
+    markEndingSeen,
+    finishRun,
+  ]);
 
   const script = useMemo(
     () => (endingId ? getEndingScript(endingId) : null),
     [endingId],
   );
 
+  const goMarket = useCallback(
+    async (href: string) => {
+      await fadeOutMainBgm();
+      await navigateWithFade(router, href);
+    },
+    [router],
+  );
+
+  const goHomeKeepBgm = useCallback(() => {
+    void navigateWithFade(router, "/");
+  }, [router]);
+
+  const goHomeReplayIntro = useCallback(() => {
+    replayIntro();
+    void fadeOutMainBgm().then(() => navigateWithFade(router, "/"));
+  }, [replayIntro, router]);
+
   const onComplete = useCallback(() => {
-    setPlaying(false);
-    if (script?.restartMarket) {
-      void navigateWithFade(router, "/market?loop=1");
-    }
-  }, [script?.restartMarket, router]);
+    if (onCompleteCalledRef.current) return;
+    onCompleteCalledRef.current = true;
+    setFadingOut(true);
+    window.setTimeout(() => {
+      setPlaying(false);
+      if (isPreview) return;
+      if (script?.restartMarket) {
+        void fadeOutMainBgm().then(() => router.push("/market?loop=1"));
+      }
+    }, ENDING_FADE_MS);
+  }, [isPreview, router, script?.restartMarket]);
 
   if (!endingId || !script) {
     return (
@@ -63,20 +116,33 @@ export default function EndingPageClient() {
 
   if (playing) {
     return (
-      <div className="fixed inset-0 z-50 hub-shell">
-        <StorySequencePlayer lines={script.lines} onComplete={onComplete} />
+      <div className="fixed inset-0 z-50 hub-shell bg-black">
+        <StorySequencePlayer
+          lines={script.lines}
+          endingId={endingId}
+          onComplete={onComplete}
+        />
+        {fadingOut && <div className="ending-fade-out" aria-hidden />}
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center hub-shell px-6 gap-6">
+    <div className="min-h-screen flex flex-col items-center justify-center hub-shell px-6 gap-6 bg-black">
       <h1 className="game-title text-xl">{script.title}</h1>
-      {script.restartMarket ? (
+      {isPreview ? (
         <button
           type="button"
           className="game-btn-primary"
-          onClick={() => void navigateWithFade(router, "/market?loop=1")}
+          onClick={goHomeKeepBgm}
+        >
+          返回主畫面
+        </button>
+      ) : script.restartMarket ? (
+        <button
+          type="button"
+          className="game-btn-primary"
+          onClick={() => void goMarket("/market?loop=1")}
         >
           再次走入夜市
         </button>
@@ -85,17 +151,14 @@ export default function EndingPageClient() {
           <button
             type="button"
             className="game-btn-ghost"
-            onClick={() => void navigateWithFade(router, "/market")}
+            onClick={() => void goMarket("/market")}
           >
             回到夜市
           </button>
           <button
             type="button"
             className="game-btn-primary"
-            onClick={() => {
-              replayIntro();
-              void navigateWithFade(router, "/");
-            }}
+            onClick={goHomeReplayIntro}
           >
             從頭開始
           </button>

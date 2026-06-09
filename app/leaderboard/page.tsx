@@ -1,5 +1,14 @@
-import LeaderboardPageClient from "@/components/leaderboard/LeaderboardPageClient";
+"use client";
+
+import { lazy, Suspense } from "react";
+import GamePageFallback from "@/components/game/GamePageFallback";
+
+const LeaderboardPageClient = lazy(() => import("@/components/leaderboard/LeaderboardPageClient"));
 
 export default function LeaderboardPage() {
-  return <LeaderboardPageClient />;
+  return (
+    <Suspense fallback={<GamePageFallback />}>
+      <LeaderboardPageClient />
+    </Suspense>
+  );
 }

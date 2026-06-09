@@ -23,7 +23,7 @@ export default function LeaveMarketModal({ onCancel, onLeave }: Props) {
       <ScoreBoardPanel variant="modal" className="w-full max-w-lg">
         <div className="space-y-4">
           <p className="score-board-panel__body">
-            前面好像就是夜市的出口了。四個遊戲都至少玩過一輪了，要現在離開嗎？
+            這裡好像是夜市的出口。四個遊戲都至少玩過一輪了，要現在離開嗎？
           </p>
           <div className="flex justify-end gap-3">
             <ScoreBoardWoodButton muted onClick={onCancel}>

@@ -23,10 +23,12 @@ function toAbsoluteStyle(box: { left: number; top: number; width: number; height
 
 export default function BackpackRedeemButton({ cover }: Props) {
   const hasCard = useCollectibleStore((s) => s.acquired.includes("point-card"));
+  const hasRedeemed = useCollectibleStore((s) => s.acquired.includes("plastic-mask"));
+  const selectedId = useCollectibleStore((s) => s.selectedId);
   const notice = useCollectibleStore((s) => s.redeemNotice);
   const setNotice = useCollectibleStore((s) => s.setRedeemNotice);
 
-  if (!hasCard) return null;
+  if (!hasCard || hasRedeemed || selectedId !== "point-card") return null;
 
   const handleClick = () => {
     const result = tryRedeemPrize();

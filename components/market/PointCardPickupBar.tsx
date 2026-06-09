@@ -70,15 +70,17 @@ export default function PointCardPickupBar({
   }, [visible, fadedIn]);
 
   useEffect(() => {
+    if (!visible) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.code !== "Space" && e.key !== " ") return;
       if (!fadedIn) return;
       e.preventDefault();
+      e.stopImmediatePropagation();
       triggerPickup();
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [triggerPickup, fadedIn]);
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [visible, triggerPickup, fadedIn]);
 
   return (
     <>

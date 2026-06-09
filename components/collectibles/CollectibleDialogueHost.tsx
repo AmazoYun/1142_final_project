@@ -13,7 +13,7 @@
 
 import { useEffect } from "react";
 import DialoguePanel from "@/components/narrative/DialoguePanel";
-import { useStoryKeyAdvance } from "@/lib/useStoryKeyAdvance";
+import { useStoryAdvance } from "@/lib/useStoryAdvance";
 import { useCollectibleStore } from "@/store/collectibleStore";
 
 export default function CollectibleDialogueHost() {
@@ -29,7 +29,7 @@ export default function CollectibleDialogueHost() {
 
   const line = pending ? pending.lines[pending.lineIndex] : null;
 
-  useStoryKeyAdvance(line ? advance : undefined, Boolean(line));
+  useStoryAdvance(line ? advance : undefined, Boolean(line));
 
   if (!line) return null;
 
@@ -40,7 +40,6 @@ export default function CollectibleDialogueHost() {
           id={line.id}
           speaker={line.speaker}
           text={getDialogueText(line.id, line.text)}
-          onAdvance={advance}
         />
       </div>
     </div>

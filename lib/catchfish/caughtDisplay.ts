@@ -1,8 +1,6 @@
-import { designToCanvas } from "@/lib/catchfish/bucketLayout";
+import { backgroundCoverTransform, bucketTargetPosition } from "@/lib/catchfish/bucketLayout";
 import { FISH_SPRITES } from "@/lib/catchfish/spriteMeta";
 
-/** 右側魚桶區：已撈起的魚由上方開始垂直排列 */
-export const CAUGHT_COLUMN_ORIGIN = { x: 2410, y: 370 };
 /** 設計座標下的魚與魚間距 */
 export const CAUGHT_SLOT_GAP = 18;
 
@@ -36,6 +34,25 @@ export function caughtFishDisplayScale(): number {
   return CAUGHT_DISPLAY_SIZE_BOOST;
 }
 
+/** 已撈魚垂直堆疊欄：對齊可見魚桶，窄螢幕時改釘在畫布右側 */
+function caughtColumnAnchor(cw: number, ch: number) {
+  const bucket = bucketTargetPosition(cw, ch);
+  const pad = Math.min(cw, ch) * 0.06;
+  const inset = pad + 28;
+
+  let x = bucket.x;
+  if (x > cw - inset) x = cw - inset;
+  if (x < cw * 0.5) x = cw * 0.78;
+
+  let startY = ch * 0.13;
+  if (bucket.y > pad && bucket.y < ch - pad) {
+    startY = Math.min(ch * 0.13, bucket.y - ch * 0.28);
+  }
+  startY = Math.max(pad, startY);
+
+  return { x, startY };
+}
+
 /** 垂直堆疊：每條魚依自身尺寸占位，彼此保留 gap */
 export function caughtFishSlotPosition(
   fishR: number,
@@ -45,14 +62,38 @@ export function caughtFishSlotPosition(
   ch: number,
 ) {
   const displayScale = caughtFishDisplayScale();
+  const { scale } = backgroundCoverTransform(cw, ch);
+  const gap = CAUGHT_SLOT_GAP * scale;
+  const anchor = caughtColumnAnchor(cw, ch);
   let stackTop = 0;
 
   for (const prev of previousCaught) {
-    stackTop += fishDisplayHeight(prev) + CAUGHT_SLOT_GAP;
+    stackTop += fishDisplayHeight(prev) + gap;
   }
 
   const thisHeight = fishDisplayHeight({ r: fishR, spriteIndex, scaleMul: displayScale });
-  const designY = CAUGHT_COLUMN_ORIGIN.y + stackTop + thisHeight * 0.5;
 
-  return designToCanvas(CAUGHT_COLUMN_ORIGIN.x, designY, cw, ch);
+  return {
+    x: anchor.x,
+    y: anchor.startY + stackTop + thisHeight * 0.5,
+  };
+}
+
+/** 視窗尺寸變更後，重算右側已撈魚堆疊位置 */
+export function relayoutCaughtFishStack(
+  caught: CaughtFishDisplay[],
+  cw: number,
+  ch: number,
+): void {
+  const entries: CaughtFishStackEntry[] = [];
+  for (const fish of caught) {
+    const pos = caughtFishSlotPosition(fish.r, fish.spriteIndex, entries, cw, ch);
+    fish.x = pos.x;
+    fish.y = pos.y;
+    entries.push({
+      r: fish.r,
+      spriteIndex: fish.spriteIndex,
+      scaleMul: fish.scaleMul,
+    });
+  }
 }

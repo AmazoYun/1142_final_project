@@ -1,21 +1,31 @@
 "use client";
 
+import { usePlayerStore } from "@/store/playerStore";
 import { create } from "zustand";
 import { narrativeDefault } from "@/data/narrative-default";
+import type { CollectibleId } from "@/lib/collectibles/types";
 import type { NarrativeBundle, StallId } from "@/lib/narrative/types";
 
 const STORAGE_KEY = "night-market-narrative-v1";
 
 type Overrides = Record<string, string>;
 
+export type CharmSpawn = {
+  id: string;
+  stallId: StallId;
+  itemId: CollectibleId;
+};
+
 type Persisted = {
   introDone: boolean;
+  pendingDirectLeavePenalty?: boolean;
   editMode: boolean;
   overrides: Overrides;
   visitedStalls: StallId[];
   completedStalls: StallId[];
   playedStalls: StallId[];
   pointCardSpawnStall: StallId | null;
+  charmSpawns: CharmSpawn[];
   marketOpeningDone: boolean;
   boundaryIndex: number;
   seenEndingId: string | null;
@@ -25,12 +35,14 @@ function loadPersisted(): Persisted {
   if (typeof window === "undefined") {
     return {
       introDone: false,
+      pendingDirectLeavePenalty: false,
       editMode: false,
       overrides: {},
       visitedStalls: [],
       completedStalls: [],
       playedStalls: [],
       pointCardSpawnStall: null,
+      charmSpawns: [],
       marketOpeningDone: false,
       boundaryIndex: 0,
       seenEndingId: null,
@@ -41,12 +53,14 @@ function loadPersisted(): Persisted {
     if (!raw) {
       return {
         introDone: false,
+        pendingDirectLeavePenalty: false,
         editMode: false,
         overrides: {},
         visitedStalls: [],
         completedStalls: [],
         playedStalls: [],
         pointCardSpawnStall: null,
+        charmSpawns: [],
         marketOpeningDone: false,
         boundaryIndex: 0,
         seenEndingId: null,
@@ -55,12 +69,18 @@ function loadPersisted(): Persisted {
     const parsed = JSON.parse(raw) as Persisted;
     return {
       introDone: parsed.introDone ?? false,
+      pendingDirectLeavePenalty: parsed.pendingDirectLeavePenalty ?? false,
       editMode: parsed.editMode ?? false,
       overrides: parsed.overrides ?? {},
       visitedStalls: parsed.visitedStalls ?? [],
       completedStalls: parsed.completedStalls ?? [],
       playedStalls: parsed.playedStalls ?? [],
       pointCardSpawnStall: parsed.pointCardSpawnStall ?? null,
+      charmSpawns: (parsed.charmSpawns ?? []).map((spawn) => ({
+        id: spawn.id,
+        stallId: spawn.stallId,
+        itemId: spawn.itemId,
+      })),
       marketOpeningDone: parsed.marketOpeningDone ?? false,
       boundaryIndex: parsed.boundaryIndex ?? 0,
       seenEndingId: parsed.seenEndingId ?? null,
@@ -68,12 +88,14 @@ function loadPersisted(): Persisted {
   } catch {
     return {
       introDone: false,
+      pendingDirectLeavePenalty: false,
       editMode: false,
       overrides: {},
       visitedStalls: [],
       completedStalls: [],
       playedStalls: [],
       pointCardSpawnStall: null,
+      charmSpawns: [],
       marketOpeningDone: false,
       boundaryIndex: 0,
       seenEndingId: null,
@@ -86,6 +108,11 @@ function savePersisted(data: Persisted) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
 }
 
+function persistAndSync(data: Persisted) {
+  savePersisted(data);
+  usePlayerStore.getState().scheduleCloudSnapshot();
+}
+
 type NarrativeStore = {
   bundle: NarrativeBundle;
   hydrated: boolean;
@@ -96,9 +123,11 @@ type NarrativeStore = {
   completedStalls: StallId[];
   playedStalls: StallId[];
   pointCardSpawnStall: StallId | null;
+  charmSpawns: CharmSpawn[];
   marketOpeningDone: boolean;
   boundaryIndex: number;
   seenEndingId: string | null;
+  pendingDirectLeavePenalty: boolean;
   hydrate: () => void;
   setOverride: (id: string, text: string) => void;
   getText: (id: string, fallback: string) => string;
@@ -112,9 +141,13 @@ type NarrativeStore = {
   markStallPlayed: (id: StallId) => void;
   hasPlayedStall: (id: StallId) => boolean;
   ensurePointCardSpawn: () => StallId | null;
+  addCharmSpawn: (spawn: { stallId: StallId; itemId: CollectibleId }) => void;
+  pickupCharmSpawn: (id: string) => CharmSpawn | null;
   completeMarketOpening: () => void;
   nextBoundaryLine: () => string | null;
   markEndingSeen: (id: string) => void;
+  markPendingDirectLeavePenalty: () => void;
+  consumePendingDirectLeavePenalty: () => boolean;
   resetAll: () => void;
 };
 
@@ -128,21 +161,25 @@ export const useNarrativeStore = create<NarrativeStore>((set, get) => ({
   completedStalls: [],
   playedStalls: [],
   pointCardSpawnStall: null,
+  charmSpawns: [],
   marketOpeningDone: false,
   boundaryIndex: 0,
   seenEndingId: null,
+  pendingDirectLeavePenalty: false,
 
   hydrate: () => {
     const p = loadPersisted();
     set({
       hydrated: true,
       introDone: p.introDone,
+      pendingDirectLeavePenalty: p.pendingDirectLeavePenalty ?? false,
       editMode: false,
       overrides: p.overrides,
       visitedStalls: p.visitedStalls,
       completedStalls: p.completedStalls,
       playedStalls: p.playedStalls,
       pointCardSpawnStall: p.pointCardSpawnStall,
+      charmSpawns: p.charmSpawns,
       marketOpeningDone: p.marketOpeningDone,
       boundaryIndex: p.boundaryIndex,
       seenEndingId: p.seenEndingId,
@@ -161,13 +198,13 @@ export const useNarrativeStore = create<NarrativeStore>((set, get) => ({
   completeIntro: () => {
     set({ introDone: true });
     const p = loadPersisted();
-    savePersisted({ ...p, introDone: true });
+    persistAndSync({ ...p, introDone: true });
   },
 
   replayIntro: () => {
     set({ introDone: false });
     const p = loadPersisted();
-    savePersisted({ ...p, introDone: false });
+    persistAndSync({ ...p, introDone: false });
   },
 
   setEditMode: () => {
@@ -180,7 +217,7 @@ export const useNarrativeStore = create<NarrativeStore>((set, get) => ({
       : [...get().visitedStalls, id];
     set({ visitedStalls: visited });
     const p = loadPersisted();
-    savePersisted({ ...p, visitedStalls: visited });
+    persistAndSync({ ...p, visitedStalls: visited });
   },
 
   hasVisitedStall: (id) => get().visitedStalls.includes(id),
@@ -191,7 +228,7 @@ export const useNarrativeStore = create<NarrativeStore>((set, get) => ({
       : [...get().completedStalls, id];
     set({ completedStalls: completed });
     const p = loadPersisted();
-    savePersisted({ ...p, completedStalls: completed });
+    persistAndSync({ ...p, completedStalls: completed });
   },
 
   hasCompletedStall: (id) => get().completedStalls.includes(id),
@@ -202,7 +239,7 @@ export const useNarrativeStore = create<NarrativeStore>((set, get) => ({
       : [...get().playedStalls, id];
     set({ playedStalls: played });
     const p = loadPersisted();
-    savePersisted({ ...p, playedStalls: played });
+    persistAndSync({ ...p, playedStalls: played });
   },
 
   hasPlayedStall: (id) => get().playedStalls.includes(id),
@@ -214,14 +251,32 @@ export const useNarrativeStore = create<NarrativeStore>((set, get) => ({
     const pick = stalls[Math.floor(Math.random() * stalls.length)]!;
     set({ pointCardSpawnStall: pick });
     const p = loadPersisted();
-    savePersisted({ ...p, pointCardSpawnStall: pick });
+    persistAndSync({ ...p, pointCardSpawnStall: pick });
     return pick;
+  },
+
+  addCharmSpawn: (spawn) => {
+    const id = `charm-${spawn.stallId}-${Date.now()}`;
+    const next = [...get().charmSpawns, { ...spawn, id }];
+    set({ charmSpawns: next });
+    const p = loadPersisted();
+    persistAndSync({ ...p, charmSpawns: next });
+  },
+
+  pickupCharmSpawn: (id) => {
+    const found = get().charmSpawns.find((s) => s.id === id) ?? null;
+    if (!found) return null;
+    const next = get().charmSpawns.filter((s) => s.id !== id);
+    set({ charmSpawns: next });
+    const p = loadPersisted();
+    persistAndSync({ ...p, charmSpawns: next });
+    return found;
   },
 
   completeMarketOpening: () => {
     set({ marketOpeningDone: true });
     const p = loadPersisted();
-    savePersisted({ ...p, marketOpeningDone: true });
+    persistAndSync({ ...p, marketOpeningDone: true });
   },
 
   nextBoundaryLine: () => {
@@ -230,25 +285,42 @@ export const useNarrativeStore = create<NarrativeStore>((set, get) => ({
     const line = lines[idx];
     set({ boundaryIndex: idx + 1 });
     const p = loadPersisted();
-    savePersisted({ ...p, boundaryIndex: idx + 1 });
+    persistAndSync({ ...p, boundaryIndex: idx + 1 });
     return get().getText(line.id, line.text);
   },
 
   markEndingSeen: (id) => {
     set({ seenEndingId: id });
     const p = loadPersisted();
-    savePersisted({ ...p, seenEndingId: id });
+    persistAndSync({ ...p, seenEndingId: id });
+  },
+
+  markPendingDirectLeavePenalty: () => {
+    set({ pendingDirectLeavePenalty: true });
+    const p = loadPersisted();
+    persistAndSync({ ...p, pendingDirectLeavePenalty: true });
+  },
+
+  consumePendingDirectLeavePenalty: () => {
+    const pending = get().pendingDirectLeavePenalty;
+    if (!pending) return false;
+    set({ pendingDirectLeavePenalty: false });
+    const p = loadPersisted();
+    persistAndSync({ ...p, pendingDirectLeavePenalty: false });
+    return true;
   },
 
   resetAll: () => {
     const fresh: Persisted = {
       introDone: false,
+      pendingDirectLeavePenalty: false,
       editMode: false,
       overrides: get().overrides,
       visitedStalls: [],
       completedStalls: [],
       playedStalls: [],
       pointCardSpawnStall: null,
+      charmSpawns: [],
       marketOpeningDone: false,
       boundaryIndex: 0,
       seenEndingId: null,
@@ -256,13 +328,16 @@ export const useNarrativeStore = create<NarrativeStore>((set, get) => ({
     savePersisted(fresh);
     set({
       introDone: false,
+      pendingDirectLeavePenalty: false,
       visitedStalls: [],
       completedStalls: [],
       playedStalls: [],
       pointCardSpawnStall: null,
+      charmSpawns: [],
       marketOpeningDone: false,
       boundaryIndex: 0,
       seenEndingId: null,
     });
+    usePlayerStore.getState().scheduleCloudSnapshot();
   },
 }));

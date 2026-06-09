@@ -20,7 +20,7 @@ export const STALL_ASPECT = 2816 / 1536;
 export const NEAR_RADIUS_RATIO = 0.055;
 
 /** 互動攤位固定順序（由左至右） */
-const INTERACTIVE_ORDER: {
+export const INTERACTIVE_ORDER: {
   id: StallId;
   label: string;
   image: string;
@@ -338,8 +338,8 @@ export const STALL_BGM_OUTER_RANGE_PX = 400;
 export const STALL_BGM_INNER_RANGE_PX = 200;
 /** @deprecated 使用 STALL_BGM_OUTER_RANGE_PX */
 export const STALL_BGM_RANGE_PX = STALL_BGM_OUTER_RANGE_PX;
-export const STALL_BGM_MIN_VOLUME = 0.02;
-export const STALL_BGM_MAX_VOLUME = 0.09;
+export const STALL_BGM_MIN_VOLUME = 0.035;
+export const STALL_BGM_MAX_VOLUME = 0.15;
 
 export function stallBgmVolumeForDistance(dist: number): number {
   if (dist >= STALL_BGM_OUTER_RANGE_PX) return 0;

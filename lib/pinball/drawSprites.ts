@@ -15,9 +15,7 @@ import {
 import { PINBALL_COLOR_KEYS, PINBALL_SOLID } from "@/lib/pinball/spriteMeta";
 import type { ImageObstacle, LayoutData, Segment } from "@/lib/pinball/types";
 import { obstacleHalfExtents, worldEdges } from "@/lib/pinball/imageBody";
-import { drawOrientedSelection } from "@/lib/pinball/editHandles";
 import type { OrientedFrame } from "@/lib/pinball/editHandles";
-import { obstacleKey } from "@/lib/pinball/unifiedLayout";
 
 export function obstacleOrientedFrame(
   obs: ImageObstacle,
@@ -61,12 +59,10 @@ export function drawObstacleSprites(
   ctx: CanvasRenderingContext2D,
   assets: LoadedPinballAssets | null,
   layout: LayoutData,
-  selectedKey = "",
-  editMode = false,
 ) {
   if (!assets) return;
 
-  layout.obstacles.forEach((obs, i) => {
+  for (const obs of layout.obstacles) {
     const img =
       obs.kind === "round"
         ? assets.obstacleRound
@@ -76,11 +72,7 @@ export function drawObstacleSprites(
             ? assets.obstacleTriangle
             : assets.obstacleRect;
     drawImageObstacle(ctx, img, obs);
-    if (editMode && selectedKey === obstacleKey(i)) {
-      const body = assets.bodies[obs.kind];
-      drawOrientedSelection(ctx, obstacleOrientedFrame(obs, body), true);
-    }
-  });
+  }
 }
 
 type CollisionDebugBall = { x: number; y: number; radius: number };

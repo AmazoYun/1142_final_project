@@ -43,12 +43,27 @@ function parseEntries(raw: unknown): LeaderboardEntry[] {
 }
 
 export function isLeaderboardConfigured() {
-  return Boolean(databaseUrl());
+  return true;
+}
+
+async function fetchLeaderboardFromApi(): Promise<LeaderboardEntry[] | null> {
+  try {
+    const res = await fetch("/api/leaderboard", { cache: "no-store" });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { configured?: boolean; entries?: LeaderboardEntry[] };
+    if (!data.configured || !Array.isArray(data.entries)) return null;
+    return data.entries;
+  } catch {
+    return null;
+  }
 }
 
 export async function fetchLeaderboardEntries(): Promise<LeaderboardEntry[]> {
+  const apiEntries = await fetchLeaderboardFromApi();
+  if (apiEntries && apiEntries.length > 0) return apiEntries;
+
   const base = databaseUrl();
-  if (!base) return [];
+  if (!base) return apiEntries ?? [];
 
   const res = await fetch(`${base}/leaderboard.json`, { cache: "no-store" });
   if (!res.ok) throw new Error("無法載入排行榜");

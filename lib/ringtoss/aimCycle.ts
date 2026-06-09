@@ -1,7 +1,7 @@
 import type { CellTarget } from "@/lib/ringtoss/boardLayout";
 
 export function activeTargets(targets: CellTarget[]): CellTarget[] {
-  return targets.filter((t) => !t.hit);
+  return targets.filter((t) => !t.hit && !t.broken);
 }
 
 export function activeColumns(targets: CellTarget[]): number[] {

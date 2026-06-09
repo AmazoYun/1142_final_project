@@ -1,6 +1,7 @@
 "use client";
 
 import { create } from "zustand";
+import { usePlayerStore } from "@/store/playerStore";
 import { generateRoadLotteryDrops } from "@/lib/economy/lotterySpawn";
 import { INITIAL_TOKENS } from "@/lib/economy/constants";
 import { prepareLotteryPlacements } from "@/lib/market/lotterySpawnPlacement";
@@ -56,6 +57,11 @@ function savePersisted(data: Persisted) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
 }
 
+function persistAndSync(data: Persisted) {
+  savePersisted(data);
+  usePlayerStore.getState().scheduleCloudSnapshot();
+}
+
 function ticketValue(type: LotteryTicketType) {
   return type === "ticket10" ? 10 : 50;
 }
@@ -100,7 +106,7 @@ export const useTokenStore = create<TokenStore>((set, get) => ({
     const tokens = get().tokens - amount;
     set({ tokens });
     const p = loadPersisted();
-    savePersisted({ ...p, tokens });
+    persistAndSync({ ...p, tokens });
     return true;
   },
 
@@ -108,7 +114,7 @@ export const useTokenStore = create<TokenStore>((set, get) => ({
     const tokens = get().tokens + amount;
     set({ tokens });
     const p = loadPersisted();
-    savePersisted({ ...p, tokens });
+    persistAndSync({ ...p, tokens });
   },
 
   addTickets: (type, count) => {
@@ -117,13 +123,13 @@ export const useTokenStore = create<TokenStore>((set, get) => ({
       const ticket10 = get().ticket10 + count;
       set({ ticket10 });
       const p = loadPersisted();
-      savePersisted({ ...p, ticket10 });
+      persistAndSync({ ...p, ticket10 });
       return;
     }
     const ticket50 = get().ticket50 + count;
     set({ ticket50 });
     const p = loadPersisted();
-    savePersisted({ ...p, ticket50 });
+    persistAndSync({ ...p, ticket50 });
   },
 
   redeemTickets: (type, count) => {
@@ -137,13 +143,13 @@ export const useTokenStore = create<TokenStore>((set, get) => ({
       const ticket10 = get().ticket10 - count;
       set({ tokens, ticket10 });
       const p = loadPersisted();
-      savePersisted({ ...p, tokens, ticket10 });
+      persistAndSync({ ...p, tokens, ticket10 });
       return true;
     }
     const ticket50 = get().ticket50 - count;
     set({ tokens, ticket50 });
     const p = loadPersisted();
-    savePersisted({ ...p, tokens, ticket50 });
+    persistAndSync({ ...p, tokens, ticket50 });
     return true;
   },
 
@@ -168,7 +174,7 @@ export const useTokenStore = create<TokenStore>((set, get) => ({
 
     set({ roadSpawns });
     const p = loadPersisted();
-    savePersisted({ ...p, roadSpawns });
+    persistAndSync({ ...p, roadSpawns });
   },
 
   devSpawnLotteryPreview: (worldX, stallId) => {
@@ -193,7 +199,7 @@ export const useTokenStore = create<TokenStore>((set, get) => ({
     ];
     set({ roadSpawns });
     const p = loadPersisted();
-    savePersisted({ ...p, roadSpawns });
+    persistAndSync({ ...p, roadSpawns });
   },
 
   pickupRoadSpawn: (id) => {
@@ -204,7 +210,7 @@ export const useTokenStore = create<TokenStore>((set, get) => ({
     const roadSpawns = get().roadSpawns.filter((s) => s.id !== id);
     set({ roadSpawns });
     const p = loadPersisted();
-    savePersisted({ ...p, roadSpawns });
+    persistAndSync({ ...p, roadSpawns });
   },
 
   resetEconomy: () => {
@@ -216,5 +222,6 @@ export const useTokenStore = create<TokenStore>((set, get) => ({
     };
     savePersisted(fresh);
     set(fresh);
+    usePlayerStore.getState().scheduleCloudSnapshot();
   },
 }));

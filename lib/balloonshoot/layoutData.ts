@@ -88,6 +88,85 @@ export const DEFAULT_BALLOON_LAYOUT: BalloonLayoutData = {
 
 const ZONES: BalloonZone[] = ["left", "center", "right"];
 
+export type BSlot = { row: number; col: number };
+
+const B_ROW_FLAT_Y_THRESHOLD = 8;
+
+function isFlatBRow(hooks: { x: number; y: number }[]) {
+  const ys = hooks.map((hook) => hook.y);
+  return Math.max(...ys) - Math.min(...ys) < B_ROW_FLAT_Y_THRESHOLD;
+}
+
+function compareBHookVisualOrder(
+  a: { x: number; y: number },
+  b: { x: number; y: number },
+  flatRow: boolean,
+) {
+  if (flatRow) return a.x - b.x;
+  const dy = b.y - a.y;
+  if (dy !== 0) return dy;
+  return a.x - b.x;
+}
+
+function visualRankByCol(hooks: { x: number; y: number }[], flatRow: boolean) {
+  return hooks
+    .map((hook, col) => ({ hook, col }))
+    .sort((a, b) => {
+      const cmp = compareBHookVisualOrder(a.hook, b.hook, flatRow);
+      return cmp !== 0 ? cmp : a.col - b.col;
+    })
+    .map(({ col }, rank) => ({ col, rank }));
+}
+
+/**
+ * 右區 B 格在素材中的掛點順序與左區編號不同。
+ * 依左區每格在該列的視覺排序（上→下、左→右）對應右區掛點，使相同 (row, col) 每次對齊結果一致。
+ */
+function alignRightBHooksWithLeft(
+  layout: BalloonLayoutData,
+  rawRightRows: { x: number; y: number }[][],
+) {
+  for (let row = 0; row < layout.bHooks.left.length; row += 1) {
+    const leftRow = layout.bHooks.left[row]!;
+    const flatRow = isFlatBRow(leftRow);
+    const sortedRight = [...rawRightRows[row]!]
+      .map((hook, index) => ({ hook, index }))
+      .sort((a, b) => {
+        const cmp = compareBHookVisualOrder(a.hook, b.hook, flatRow);
+        return cmp !== 0 ? cmp : a.index - b.index;
+      })
+      .map(({ hook }) => hook);
+    const ranks = visualRankByCol(leftRow, flatRow);
+    const result: { x: number; y: number }[] = new Array(leftRow.length);
+    for (const { col, rank } of ranks) {
+      result[col] = sortedRight[rank]!;
+    }
+    layout.bHooks.right[row] = result;
+  }
+}
+
+export function normalizeBalloonLayout(layout: BalloonLayoutData): BalloonLayoutData {
+  const next = cloneBalloonLayout(layout);
+  const rawRightRows = layout.bHooks.right.map((row) => row.map(clonePoint));
+  alignRightBHooksWithLeft(next, rawRightRows);
+  return next;
+}
+
+export function balloonMatchesBSlot(
+  balloon: {
+    zone: BalloonZone;
+    area: string;
+    bRow?: number;
+    bCol?: number;
+  },
+  zone: BalloonZone,
+  slot: BSlot,
+): boolean {
+  if (balloon.zone !== zone || balloon.area !== "B") return false;
+  if (balloon.bRow === undefined || balloon.bCol === undefined) return false;
+  return balloon.bRow === slot.row && balloon.bCol === slot.col;
+}
+
 function clonePoint(p: { x: number; y: number }) {
   return { x: p.x, y: p.y };
 }
@@ -123,8 +202,9 @@ function isPoint(value: unknown): value is { x: number; y: number } {
 }
 
 export function migrateBalloonLayout(raw: unknown): BalloonLayoutData {
-  const fallback = cloneBalloonLayout(DEFAULT_BALLOON_LAYOUT);
-  if (typeof raw !== "object" || raw === null) return fallback;
+  if (typeof raw !== "object" || raw === null) {
+    return normalizeBalloonLayout(DEFAULT_BALLOON_LAYOUT);
+  }
 
   const data = raw as Partial<BalloonLayoutData>;
   const next = cloneBalloonLayout(DEFAULT_BALLOON_LAYOUT);
@@ -153,7 +233,7 @@ export function migrateBalloonLayout(raw: unknown): BalloonLayoutData {
     }
   }
 
-  return next;
+  return normalizeBalloonLayout(next);
 }
 
 function averageOffset(offsets: { x: number; y: number }[]) {

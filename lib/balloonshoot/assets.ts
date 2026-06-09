@@ -20,6 +20,11 @@ export const BALLOON_COLOR_HEX: Record<BalloonColor, string> = {
   pink: "#ec4899",
 };
 
+export const BALLOON_ADVANCED_BUTTON = {
+  unpressed: "/ringtoss/button_unpressed.webp",
+  pressed: "/ringtoss/button_pressed.webp",
+} as const;
+
 export type BalloonAssets = {
   background: HTMLImageElement;
   full: Record<BalloonColor, HTMLImageElement>;

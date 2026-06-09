@@ -6,6 +6,17 @@ export const BACKPACK_BACKGROUND = "/backpack/backpack.webp";
 export const BACKPACK_IMAGE_WIDTH = 2752;
 export const BACKPACK_IMAGE_HEIGHT = 1536;
 
+/** 攤位遊戲內背包彈窗：僅 3×4 格區域 */
+export const BACKPACK_SMALL_BACKGROUND = "/backpack/backpack_small.webp";
+export const BACKPACK_SMALL_IMAGE_WIDTH = 1061;
+export const BACKPACK_SMALL_IMAGE_HEIGHT = 837;
+export const BACKPACK_SMALL_GRID_VIEWPORT: BackpackSlotRect = {
+  cx: 0.5,
+  cy: 0.5,
+  w: 1,
+  h: 1,
+};
+
 export type BackpackSlotRect = {
   cx: number;
   cy: number;
@@ -21,6 +32,24 @@ export type CoverRect = {
 };
 
 /** object-fit: cover 時，圖片在容器內的實際渲染區域 */
+/** 將背景圖裁切放大至只顯示指定區域（cover 填滿容器） */
+export function resolveViewportCover(
+  containerW: number,
+  containerH: number,
+  viewport: BackpackSlotRect = BACKPACK_GRID_VIEWPORT,
+  imageW = BACKPACK_IMAGE_WIDTH,
+  imageH = BACKPACK_IMAGE_HEIGHT,
+): CoverRect {
+  const vpPxW = viewport.w * imageW;
+  const vpPxH = viewport.h * imageH;
+  const scale = Math.max(containerW / vpPxW, containerH / vpPxH);
+  const width = imageW * scale;
+  const height = imageH * scale;
+  const vpLeft = (viewport.cx - viewport.w / 2) * width;
+  const vpTop = (viewport.cy - viewport.h / 2) * height;
+  return { width, height, offsetX: -vpLeft, offsetY: -vpTop };
+}
+
 export function resolveCoverRect(
   containerW: number,
   containerH: number,
@@ -58,6 +87,30 @@ function slot(cx: number, cy: number, w: number, h: number): BackpackSlotRect {
 /**
  * 右側 3×4 道具格（依標註圖黃框偵測；由左至右、上至下索引 0–11）
  */
+/** 右側 3×4 道具格外框（遊戲內背包彈窗裁切區） */
+export const BACKPACK_GRID_VIEWPORT: BackpackSlotRect = {
+  cx: 0.6582,
+  cy: 0.4775,
+  w: 0.375,
+  h: 0.53,
+};
+
+/** 攤位遊戲內背包彈窗槽位（對應 backpack_small.webp） */
+export const BACKPACK_SMALL_GRID_SLOTS: BackpackSlotRect[] = [
+  slot(0.12109, 0.16679, 0.24219, 0.33317),
+  slot(0.37109, 0.16679, 0.25781, 0.33317),
+  slot(0.62891, 0.16679, 0.25781, 0.33317),
+  slot(0.87891, 0.16679, 0.24219, 0.33317),
+  slot(0.12109, 0.50166, 0.24219, 0.33657),
+  slot(0.37109, 0.50166, 0.25781, 0.33657),
+  slot(0.62891, 0.50166, 0.25781, 0.33657),
+  slot(0.87891, 0.50166, 0.24219, 0.33657),
+  slot(0.12109, 0.83481, 0.24219, 0.32975),
+  slot(0.37109, 0.83481, 0.25781, 0.32975),
+  slot(0.62891, 0.83481, 0.25781, 0.32975),
+  slot(0.87891, 0.83481, 0.24219, 0.32975),
+];
+
 export const GRID_SLOTS: BackpackSlotRect[] = [
   slot(0.51611, 0.3009, 0.09082, 0.17658),
   slot(0.60986, 0.3009, 0.09668, 0.17658),
@@ -112,7 +165,17 @@ export const BACKPACK_ITEM_IMAGES: Record<CollectibleId, string> = {
   bracelet: "/backpack/handlace.webp",
   "point-card": "/backpack/card.webp",
   "plastic-mask": "/backpack/mask.webp",
+  "fortune-slip-jia": "/backpack/charm.webp",
+  "fortune-slip-yi": "/backpack/charm.webp",
+  "fortune-slip-bing": "/backpack/charm.webp",
+  "pinball-marble": "/pinball/pinball_blue.webp",
 };
+
+/** 上方四格：攤位專屬道具 */
+export const SPECIAL_GRID_SLOTS = GRID_SLOTS.slice(0, 4);
+
+/** 下方八格：其他道具（先獲得排前） */
+export const REGULAR_GRID_SLOTS = GRID_SLOTS.slice(4);
 
 /** 道具在槽內顯示尺寸（佔槽寬比例，統一大小） */
 export const BACKPACK_ITEM_SIZE_RATIO = 0.68;

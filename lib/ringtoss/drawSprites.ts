@@ -171,16 +171,7 @@ export function drawBonusBottleGlows(
   }
 }
 
-export function drawBottleSprite(
-  ctx: CanvasRenderingContext2D,
-  assets: LoadedRingTossAssets | null,
-  gx: number,
-  gy: ShelfRow,
-  cw: number,
-  ch: number,
-) {
-  const metrics = bottleMetrics(gx, gy, cw, ch);
-
+function drawBottleShadow(ctx: CanvasRenderingContext2D, metrics: BottleMetrics) {
   ctx.save();
   ctx.fillStyle = "rgba(0, 0, 0, 0.42)";
   ctx.beginPath();
@@ -195,19 +186,53 @@ export function drawBottleSprite(
   );
   ctx.fill();
   ctx.restore();
+}
 
-  if (assets?.bottle) {
-    ctx.drawImage(
-      assets.bottle,
-      metrics.drawX,
-      metrics.drawY,
-      metrics.drawW,
-      metrics.drawH,
-    );
+export function drawBottleSprite(
+  ctx: CanvasRenderingContext2D,
+  assets: LoadedRingTossAssets | null,
+  gx: number,
+  gy: ShelfRow,
+  cw: number,
+  ch: number,
+  broken = false,
+) {
+  const metrics = bottleMetrics(gx, gy, cw, ch);
+  drawBottleShadow(ctx, metrics);
+
+  const sprite = broken ? assets?.bottleBroken : assets?.bottle;
+  if (sprite) {
+    ctx.drawImage(sprite, metrics.drawX, metrics.drawY, metrics.drawW, metrics.drawH);
   } else {
-    ctx.fillStyle = "#a08060";
+    ctx.fillStyle = broken ? "#6a5040" : "#a08060";
     ctx.fillRect(metrics.drawX, metrics.drawY, metrics.drawW, metrics.drawH);
   }
+}
+
+/** 以設計座標（720×640）判斷彈珠是否落在酒瓶上 */
+export function findBottleTargetAtBoardPoint(
+  targets: CellTarget[],
+  boardX: number,
+  boardY: number,
+): CellTarget | undefined {
+  let best: { target: CellTarget; dist: number } | null = null;
+
+  for (const target of targets) {
+    if (target.broken || target.hit) continue;
+    const gy = target.gy as ShelfRow;
+    const design = gridToCanvas(target.gx, gy);
+    const { w, h } = bottleDisplaySize(gy);
+    const footY = design.y + h / 2 + bottleRowYOffset(gy);
+    const cx = design.x;
+    const cy = footY - h * BOTTLE_OPAQUE_BOTTOM_RATIO * 0.52;
+    const hitR = Math.max(w, h) * 0.58;
+    const dist = Math.hypot(boardX - cx, boardY - cy);
+    if (dist <= hitR && (!best || dist < best.dist)) {
+      best = { target, dist };
+    }
+  }
+
+  return best?.target;
 }
 
 export function drawHitLabel(

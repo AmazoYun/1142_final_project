@@ -2,23 +2,30 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useGameRoundActive } from "@/components/game/GameRoundActiveContext";
 import GameHudBar from "@/components/game/GameHudBar";
 import GameRoundEndModal from "@/components/game/GameRoundEndModal";
 import { hasCollectible } from "@/lib/collectibles/acquireItem";
+import { isGameInputBlocked } from "@/lib/collectibles/isGameInputBlocked";
 import { awardStallReward } from "@/lib/collectibles/awardStallReward";
-import { balloonRewardEligible } from "@/lib/collectibles/rewardConditions";
+import { balloonAdvancedRewardEligible } from "@/lib/collectibles/rewardConditions";
 import { STALL_REWARD } from "@/lib/collectibles/stallRewards";
 import { returnToMarketAfterRound } from "@/lib/economy/returnToMarket";
 import { finalizeGameRound } from "@/lib/economy/processRoundEnd";
 import { trySpendPlayCost } from "@/lib/economy/playGame";
+import { clearStallRoundDismissed } from "@/lib/game/stallRoundLeave";
+import { useStallRoundEndLeave } from "@/lib/game/useStallRoundEndLeave";
 import { reportStallScore } from "@/lib/player/reportStallScore";
+import { useCollectibleStore } from "@/store/collectibleStore";
 import { useTokenStore } from "@/store/tokenStore";
 import {
+  BALLOON_ADVANCED_BUTTON,
   BALLOON_COLORS,
   loadBalloonAssets,
   type BalloonAssets,
   type BalloonColor,
 } from "@/lib/balloonshoot/assets";
+import { playImpactSound } from "@/lib/sfx/randomSfx";
 import {
   aHookPosition,
   BALLOON_BODY_DROP,
@@ -27,9 +34,8 @@ import {
   type BalloonZone,
 } from "@/lib/balloonshoot/hookLayout";
 import {
-  cloneBalloonLayout,
   DEFAULT_BALLOON_LAYOUT,
-  migrateBalloonLayout,
+  normalizeBalloonLayout,
   type BalloonLayoutData,
 } from "@/lib/balloonshoot/layoutData";
 import { createBalloonShootSoundFx, type BalloonShootSoundFx } from "@/lib/balloonshoot/sounds";
@@ -148,6 +154,7 @@ function createBalloons(layout: BalloonLayoutData): Balloon[] {
     for (let row = 0; row < 2; row++) {
       for (let col = 0; col < 4; col++) {
         const idx = row * 4 + col;
+        const color = BALLOON_COLORS[idx % BALLOON_COLORS.length]!;
         const hook = bHookPosition(zone, row, col, layout);
         list.push({
           id: `${zone}-B-${idx}`,
@@ -155,7 +162,7 @@ function createBalloons(layout: BalloonLayoutData): Balloon[] {
           area: "B",
           bRow: row,
           bCol: col,
-          color: BALLOON_COLORS[(idx + zones.indexOf(zone)) % BALLOON_COLORS.length]!,
+          color,
           r,
           alive: true,
           x: hook.x,
@@ -166,6 +173,28 @@ function createBalloons(layout: BalloonLayoutData): Balloon[] {
   }
 
   return list;
+}
+
+function applyAdvancedPops(
+  balloons: Balloon[],
+  targetColors: BalloonColor[],
+  now: number,
+  popBalloon: (b: Balloon, now: number, options?: { silent?: boolean }) => void,
+) {
+  const colorSet = new Set(targetColors);
+  for (const b of balloons) {
+    if (!b.alive) continue;
+
+    const isSideA = b.area === "A" && (b.zone === "left" || b.zone === "right");
+    const isSideBTarget =
+      b.area === "B" &&
+      (b.zone === "left" || b.zone === "right") &&
+      colorSet.has(b.color);
+
+    if (isSideA || isSideBTarget) {
+      popBalloon(b, now, { silent: true });
+    }
+  }
 }
 
 function updateRotatingPositions(
@@ -353,7 +382,7 @@ export default function BalloonShootGame() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const bufferRef = useRef<HTMLCanvasElement | null>(null);
   const assetsRef = useRef<BalloonAssets | null>(null);
-  const layoutRef = useRef<BalloonLayoutData>(cloneBalloonLayout(DEFAULT_BALLOON_LAYOUT));
+  const layoutRef = useRef<BalloonLayoutData>(normalizeBalloonLayout(DEFAULT_BALLOON_LAYOUT));
   const balloonsRef = useRef<Balloon[]>(createBalloons(layoutRef.current));
   const aimWorldRef = useRef({ x: W / 2, y: H / 2 });
   const aimModeRef = useRef(false);
@@ -367,14 +396,30 @@ export default function BalloonShootGame() {
   const [gameOver, setGameOver] = useState(false);
   const [aimMode, setAimMode] = useState(false);
   const [roundEnd, setRoundEnd] = useState<{ score: number; lotteryYuan: number } | null>(null);
+  const [advancedStarted, setAdvancedStarted] = useState(false);
+  const [layoutReady, setLayoutReady] = useState(false);
 
   const router = useRouter();
   const tokens = useTokenStore((s) => s.tokens);
+  const hydrateCollectibles = useCollectibleStore((s) => s.hydrate);
+  const hasFortuneYi = useCollectibleStore((s) => s.hasAcquired("fortune-slip-yi"));
+  const hasBalloonReward = useCollectibleStore((s) => s.hasAcquired(STALL_REWARD.balloonshoot));
+  const { setRoundActive } = useGameRoundActive();
+
+  useEffect(() => {
+    hydrateCollectibles();
+  }, [hydrateCollectibles]);
+
+  useEffect(() => {
+    setRoundActive(!gameOver);
+  }, [gameOver, setRoundActive]);
 
   const scoreRef = useRef(0);
   const bulletsRef = useRef(INITIAL_BULLETS);
   const gameOverRef = useRef(false);
   const stallRewardGrantedRef = useRef(false);
+  const advancedModeRef = useRef(false);
+  const advancedTargetColorsRef = useRef<BalloonColor[]>([]);
   const roundEndHandledRef = useRef(false);
 
   const addScore = useCallback((delta: number) => {
@@ -384,7 +429,15 @@ export default function BalloonShootGame() {
 
   const tryAwardBalloonReward = useCallback(() => {
     if (stallRewardGrantedRef.current) return;
-    if (!balloonRewardEligible(balloonsRef.current)) return;
+    if (
+      !balloonAdvancedRewardEligible(
+        balloonsRef.current,
+        advancedModeRef.current,
+        advancedTargetColorsRef.current,
+      )
+    ) {
+      return;
+    }
 
     stallRewardGrantedRef.current = true;
     const rewardId = STALL_REWARD.balloonshoot;
@@ -427,20 +480,65 @@ export default function BalloonShootGame() {
   );
 
   const popBalloon = useCallback(
-    (b: Balloon, now: number) => {
-      b.alive = false;
-      b.popStart = now;
-      addScore(ZONE_HIT_SCORE[b.zone]);
-      if (b.area === "A") {
-        tryScoreAZone(b.zone);
+    (b: Balloon, now: number, options?: { silent?: boolean }) => {
+      const chainPop =
+        !options?.silent &&
+        advancedModeRef.current &&
+        b.area === "B" &&
+        advancedTargetColorsRef.current.includes(b.color);
+
+      const targets = chainPop
+        ? balloonsRef.current.filter(
+            (balloon) =>
+              balloon.alive &&
+              balloon.area === "B" &&
+              balloon.color === b.color,
+          )
+        : [b];
+
+      for (const balloon of targets) {
+        balloon.alive = false;
+        balloon.popStart = now;
+        if (options?.silent) continue;
+        addScore(ZONE_HIT_SCORE[balloon.zone]);
+        if (balloon.area === "A") {
+          tryScoreAZone(balloon.zone);
+        }
       }
-      tryAwardBalloonReward();
+
+      if (!options?.silent) {
+        tryAwardBalloonReward();
+      }
     },
     [addScore, tryAwardBalloonReward, tryScoreAZone],
   );
 
   const popBalloonRef = useRef(popBalloon);
   popBalloonRef.current = popBalloon;
+
+  const startAdvancedMode = useCallback(() => {
+    if (advancedModeRef.current || gameOverRef.current) return;
+    if (!hasFortuneYi) return;
+    if (hasBalloonReward) return;
+
+    const colors = [...BALLOON_COLORS];
+    for (let i = colors.length - 1; i > 0; i -= 1) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [colors[i], colors[j]] = [colors[j]!, colors[i]!];
+    }
+
+    const targetColors = colors.slice(0, 4);
+    advancedTargetColorsRef.current = targetColors;
+    advancedModeRef.current = true;
+    setAdvancedStarted(true);
+
+    applyAdvancedPops(
+      balloonsRef.current,
+      targetColors,
+      performance.now(),
+      popBalloonRef.current,
+    );
+  }, [hasBalloonReward, hasFortuneYi]);
 
   const getCanvasPoint = useCallback((clientX: number, clientY: number) => {
     const canvas = canvasRef.current;
@@ -483,18 +581,35 @@ export default function BalloonShootGame() {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+
     const loadLayout = async () => {
       try {
         const res = await fetch("/api/balloon-layout");
-        if (!res.ok) return;
-        const data = migrateBalloonLayout(await res.json());
-        layoutRef.current = data;
-        balloonsRef.current = createBalloons(data);
+        if (!cancelled && res.ok) {
+          const data = (await res.json()) as BalloonLayoutData;
+          layoutRef.current = data;
+          balloonsRef.current = createBalloons(data);
+          if (advancedModeRef.current) {
+            applyAdvancedPops(
+              balloonsRef.current,
+              advancedTargetColorsRef.current,
+              performance.now(),
+              popBalloonRef.current,
+            );
+          }
+        }
       } catch {
         /* 使用預設布局 */
+      } finally {
+        if (!cancelled) setLayoutReady(true);
       }
     };
-    loadLayout();
+
+    void loadLayout();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -515,6 +630,7 @@ export default function BalloonShootGame() {
     bufferRef.current = buffer;
 
     const onKeyDown = (e: KeyboardEvent) => {
+      if (isGameInputBlocked()) return;
       if (e.code !== "Space" || gameOverRef.current) return;
       e.preventDefault();
       if (e.repeat) return;
@@ -525,6 +641,7 @@ export default function BalloonShootGame() {
     };
 
     const onKeyUp = (e: KeyboardEvent) => {
+      if (isGameInputBlocked()) return;
       if (e.code !== "Space") return;
       e.preventDefault();
       aimModeRef.current = false;
@@ -603,14 +720,33 @@ export default function BalloonShootGame() {
     bulletsRef.current = INITIAL_BULLETS;
     gameOverRef.current = false;
     stallRewardGrantedRef.current = false;
+    advancedModeRef.current = false;
+    advancedTargetColorsRef.current = [];
     roundEndHandledRef.current = false;
     setScore(0);
     setBullets(INITIAL_BULLETS);
     setGameOver(false);
     setAimMode(false);
     setRoundEnd(null);
+    setAdvancedStarted(false);
     sfxRef.current?.startRotating();
   };
+
+  const onAdvancedButtonClick = () => {
+    if (advancedModeRef.current || gameOver || !layoutReady) return;
+    if (!hasFortuneYi || hasBalloonReward) return;
+    sfxRef.current?.playButtonPressed();
+    playImpactSound();
+    startAdvancedMode();
+  };
+
+  const showAdvancedButton = hasFortuneYi && !hasBalloonReward;
+
+  useStallRoundEndLeave(
+    "balloonshoot",
+    gameOver && roundEnd !== null,
+    resetGame,
+  );
 
   return (
     <main className="flex h-full min-h-0 w-full flex-col overflow-hidden">
@@ -630,16 +766,50 @@ export default function BalloonShootGame() {
           onPointerDown={onPointerDown}
         />
 
+        {showAdvancedButton ? (
+          <button
+            type="button"
+            className="game-advanced-img-btn"
+            disabled={gameOver || !layoutReady}
+            aria-label="進階模式"
+            onClick={onAdvancedButtonClick}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={
+                advancedStarted
+                  ? BALLOON_ADVANCED_BUTTON.pressed
+                  : BALLOON_ADVANCED_BUTTON.unpressed
+              }
+              alt=""
+              draggable={false}
+            />
+          </button>
+        ) : null}
+
         <GameRoundEndModal
           open={gameOver && roundEnd !== null}
           score={roundEnd?.score ?? 0}
           lotteryYuan={roundEnd?.lotteryYuan ?? 0}
           tokens={tokens}
           onPlayAgain={() => {
+            clearStallRoundDismissed("balloonshoot");
             if (!trySpendPlayCost()) return;
             resetGame();
           }}
-          onReturnToMarket={() => returnToMarketAfterRound(router)}
+          onReturnToMarket={() => {
+            const score = roundEnd?.score ?? 0;
+            returnToMarketAfterRound(
+              router,
+              { stallId: "balloonshoot", score },
+              () => {
+                gameOverRef.current = false;
+                roundEndHandledRef.current = false;
+                setGameOver(false);
+                setRoundEnd(null);
+              },
+            );
+          }}
         />
       </div>
     </main>

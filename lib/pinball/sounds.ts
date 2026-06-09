@@ -10,6 +10,7 @@ const ROLLING_SRC = "/sfx/pinball/pinball_rolling.mp3";
 
 const BUMP_COOLDOWN_MS = 60;
 const PEAK_VOLUME = 0.5;
+const BUMP_PEAK_VOLUME = PEAK_VOLUME * 0.5;
 const ROLLING_PEAK_VOLUME = 0.275;
 const FADE_IN_MS = 30;
 const FADE_OUT_MS = 30;
@@ -17,7 +18,8 @@ const FADE_OUT_MS = 30;
 export type PinballSoundFx = {
   preload: () => void;
   playBump: () => void;
-  playPress: () => void;
+  startPress: () => void;
+  stopPress: () => void;
   playScore: () => void;
   startRolling: () => void;
   stopRolling: () => void;
@@ -107,11 +109,12 @@ export function createPinballSoundFx(): PinballSoundFx {
   const bumpClips = BUMP_SRC.map((src) => {
     const audio = new Audio(src);
     audio.preload = "auto";
-    audio.volume = PEAK_VOLUME;
+    audio.volume = BUMP_PEAK_VOLUME;
     return audio;
   });
   const press = new Audio(PRESS_SRC);
   press.preload = "auto";
+  press.loop = true;
   press.volume = PEAK_VOLUME;
   const score = new Audio(SCORE_SRC);
   score.preload = "auto";
@@ -122,8 +125,16 @@ export function createPinballSoundFx(): PinballSoundFx {
   rolling.volume = ROLLING_PEAK_VOLUME;
 
   let lastBumpAt = 0;
+  let pressActive = false;
   let rollingActive = false;
   let rollingFade: FadeHandle | null = null;
+
+  const stopPress = () => {
+    if (!pressActive) return;
+    pressActive = false;
+    press.pause();
+    press.currentTime = 0;
+  };
 
   const stopRolling = () => {
     if (!rollingActive) return;
@@ -149,7 +160,16 @@ export function createPinballSoundFx(): PinballSoundFx {
       const pick = bumpClips[Math.floor(Math.random() * bumpClips.length)];
       playOneShot(pick);
     },
-    playPress: () => playOneShot(press),
+    startPress: () => {
+      if (pressActive) return;
+      pressActive = true;
+      press.currentTime = 0;
+      press.volume = PEAK_VOLUME;
+      void press.play().catch(() => {
+        pressActive = false;
+      });
+    },
+    stopPress,
     playScore: () => {
       stopRolling();
       playOneShot(score);
@@ -168,6 +188,7 @@ export function createPinballSoundFx(): PinballSoundFx {
     },
     stopRolling,
     dispose: () => {
+      stopPress();
       rollingFade?.cancel();
       rollingFade = null;
       if (rollingActive) {

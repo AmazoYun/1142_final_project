@@ -1,9 +1,14 @@
-import RingTossGame from "./RingTossGame";
+"use client";
+
+import { lazy, Suspense } from "react";
+import GamePageFallback from "@/components/game/GamePageFallback";
+
+const RingTossGame = lazy(() => import("./RingTossGame"));
 
 export default function RingTossPage() {
   return (
-    <div className="ringtoss-fullscreen">
+    <Suspense fallback={<GamePageFallback />}>
       <RingTossGame />
-    </div>
+    </Suspense>
   );
 }

@@ -24,6 +24,8 @@ export type CellTarget = {
   hit: boolean;
   /** 本局隨機抽中的紅光目標瓶 */
   bonus?: boolean;
+  /** 被彈珠擊中破掉的酒瓶 */
+  broken?: boolean;
 };
 
 /** Map design-space coords (720×640) to actual canvas pixels */

@@ -101,9 +101,19 @@ export const collectiblesDefault: CollectibleCatalog = {
           text: "這不是我的名字嗎？怎麼會有人把這東西放在金魚店的池底？",
         },
         {
+          id: "col-bracelet-d2b",
+          speaker: "主角",
+          text: "天哪！這水怎麼變紅了⋯⋯",
+        },
+        {
+          id: "col-bracelet-d2c",
+          speaker: "主角",
+          text: "這...這是血？！",
+        },
+        {
           id: "col-bracelet-d3",
           speaker: "主角",
-          text: "這真的是整人遊戲嗎？越玩越覺得...這裡安靜得讓我害怕。",
+          text: "這真的是整人遊戲嗎？這裏越來越恐怖了，拜託讓我快點離開這裡啊！",
         },
       ],
     },
@@ -129,6 +139,64 @@ export const collectiblesDefault: CollectibleCatalog = {
           id: "col-point-card-d3",
           speaker: "主角",
           text: "真受不了，這裡連垃圾桶都沒有嗎？",
+        },
+      ],
+    },
+    {
+      id: "fortune-slip-jia",
+      name: "籤詩甲",
+      icon: "/backpack/charm.webp",
+      image: "/backpack/charm.webp",
+      description: "摘下天上的塑膠寶石，將空洞的酣意給擊個粉碎。",
+      acquireDialogue: [
+        {
+          id: "col-fortune-jia-d1",
+          speaker: "主角",
+          text: "這籤詩怎麼寫得這麼怪……塑膠寶石？",
+        },
+      ],
+    },
+    {
+      id: "fortune-slip-yi",
+      name: "籤詩乙",
+      icon: "/backpack/charm.webp",
+      image: "/backpack/charm.webp",
+      description:
+        "答案總是近在咫尺，人們卻總是喜歡舉槍，直到戰爭可以被一顆按鈕終結。",
+      acquireDialogue: [
+        {
+          id: "col-fortune-yi-d1",
+          speaker: "主角",
+          text: "這籤詩在說什麼？聽起來好嚴肅。",
+        },
+      ],
+    },
+    {
+      id: "fortune-slip-bing",
+      name: "籤詩丙",
+      icon: "/backpack/charm.webp",
+      image: "/backpack/charm.webp",
+      description:
+        "偽善的崇高境界，噗通一聲投入井中，回音是鮮紅的漣漪，功德無量。",
+      acquireDialogue: [
+        {
+          id: "col-fortune-bing-d1",
+          speaker: "主角",
+          text: "這籤詩的字句讓人背脊發涼……",
+        },
+      ],
+    },
+    {
+      id: "pinball-marble",
+      name: "彈珠",
+      icon: "/pinball/pinball_blue.webp",
+      image: "/pinball/pinball_blue.webp",
+      description: "從彈珠台頂端取下的彈珠，沉甸甸的，似乎還帶著機台的餘溫。",
+      acquireDialogue: [
+        {
+          id: "col-marble-d1",
+          speaker: "主角",
+          text: "這顆彈珠……好像比一般的重一點。",
         },
       ],
     },

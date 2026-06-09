@@ -1,5 +1,14 @@
-import NightMarketHub from "@/components/market/NightMarketHub";
+"use client";
+
+import { lazy, Suspense } from "react";
+import GamePageFallback from "@/components/game/GamePageFallback";
+
+const NightMarketHub = lazy(() => import("@/components/market/NightMarketHub"));
 
 export default function MarketPage() {
-  return <NightMarketHub />;
+  return (
+    <Suspense fallback={<GamePageFallback />}>
+      <NightMarketHub />
+    </Suspense>
+  );
 }

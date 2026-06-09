@@ -1,20 +1,21 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useEffect, type ReactNode } from "react";
+import GamePageHeader from "@/components/game/GamePageHeader";
+import { GameRoundActiveProvider } from "@/components/game/GameRoundActiveContext";
 import { startHubBgm } from "@/lib/market/hubSounds";
-import { navigateWithFade } from "@/lib/navigation/navigateWithFade";
+import { createAmbientRandomSfx } from "@/lib/sfx/randomSfx";
 import { usePageFadeIn } from "@/lib/navigation/usePageFadeIn";
 
 type Props = {
   title: string;
   children: ReactNode;
   className?: string;
+  backpack?: ReactNode;
 };
 
 /** 四款小遊戲共用頂欄；遊戲本體自行排版，外殼不擠壓版面 */
-export default function GameShell({ title, children, className = "" }: Props) {
-  const router = useRouter();
+export default function GameShell({ title, children, className = "", backpack }: Props) {
   usePageFadeIn();
 
   useEffect(() => {
@@ -22,23 +23,19 @@ export default function GameShell({ title, children, className = "" }: Props) {
   }, [title]);
 
   useEffect(() => {
+    const ambient = createAmbientRandomSfx();
+    ambient.preload();
     startHubBgm();
+    ambient.start();
+    return () => ambient.dispose();
   }, []);
 
   return (
-    <div className={`game-stage-shell min-h-screen flex flex-col ${className}`.trim()}>
-      <header className="game-header shrink-0 flex items-center justify-between px-4 py-2.5">
-        <button
-          type="button"
-          className="text-xs tracking-widest text-foreground/70 uppercase hover:text-foreground transition-colors"
-          onClick={() => void navigateWithFade(router, "/market")}
-        >
-          ← 返回夜市
-        </button>
-        <h1 className="game-title text-sm sm:text-base">{title}</h1>
-        <div className="w-[72px]" />
-      </header>
-      <div className="flex-1 min-h-0 w-full">{children}</div>
-    </div>
+    <GameRoundActiveProvider>
+      <div className={`game-stage-shell min-h-screen flex flex-col ${className}`.trim()}>
+        <GamePageHeader title={title} backpack={backpack} />
+        <div className="flex-1 min-h-0 w-full">{children}</div>
+      </div>
+    </GameRoundActiveProvider>
   );
 }

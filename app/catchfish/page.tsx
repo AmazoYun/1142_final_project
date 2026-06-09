@@ -1,9 +1,14 @@
-import CatchFishGame from "./CatchFishGame";
+"use client";
+
+import { lazy, Suspense } from "react";
+import GamePageFallback from "@/components/game/GamePageFallback";
+
+const CatchFishGame = lazy(() => import("./CatchFishGame"));
 
 export default function CatchFishPage() {
   return (
-    <div className="catchfish-fullscreen">
+    <Suspense fallback={<GamePageFallback />}>
       <CatchFishGame />
-    </div>
+    </Suspense>
   );
 }

@@ -1,16 +1,14 @@
-import { Suspense } from "react";
-import EndingPage from "./EndingPageClient";
+"use client";
 
-export default function Page() {
+import { lazy, Suspense } from "react";
+import GamePageFallback from "@/components/game/GamePageFallback";
+
+const EndingPageClient = lazy(() => import("./EndingPageClient"));
+
+export default function EndingPage() {
   return (
-    <Suspense
-      fallback={
-        <div className="min-h-screen flex items-center justify-center hub-shell">
-          <p className="text-sm opacity-70">載入結局中…</p>
-        </div>
-      }
-    >
-      <EndingPage />
+    <Suspense fallback={<GamePageFallback />}>
+      <EndingPageClient />
     </Suspense>
   );
 }

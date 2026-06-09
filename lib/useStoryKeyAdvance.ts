@@ -14,11 +14,12 @@ export function useStoryKeyAdvance(onAdvance?: () => void, enabled = true) {
       const tag = (e.target as HTMLElement | null)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "BUTTON") return;
       e.preventDefault();
+      e.stopImmediatePropagation();
       playUiButtonSound();
       onAdvance();
     };
 
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
   }, [onAdvance, enabled]);
 }

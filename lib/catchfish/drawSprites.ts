@@ -18,20 +18,13 @@ type FishDrawState = {
   shakeY?: number;
 };
 
-/** 背景 cover 鋪滿整個 canvas */
-export function drawCatchFishBackground(
+function drawCoverBackground(
   ctx: CanvasRenderingContext2D,
-  assets: LoadedCatchFishAssets | null,
+  img: HTMLImageElement,
   cw: number,
   ch: number,
+  alpha = 1,
 ) {
-  if (!assets?.background) {
-    ctx.fillStyle = "#2a2218";
-    ctx.fillRect(0, 0, cw, ch);
-    return;
-  }
-
-  const img = assets.background;
   const iw = img.naturalWidth;
   const ih = img.naturalHeight;
   const scale = Math.max(cw / iw, ch / ih);
@@ -39,7 +32,30 @@ export function drawCatchFishBackground(
   const dh = ih * scale;
   const dx = (cw - dw) / 2;
   const dy = (ch - dh) / 2;
+  ctx.save();
+  ctx.globalAlpha = alpha;
   ctx.drawImage(img, dx, dy, dw, dh);
+  ctx.restore();
+}
+
+/** 背景 cover 鋪滿整個 canvas；bloodyAlpha 0–1 與原池 crossfade */
+export function drawCatchFishBackground(
+  ctx: CanvasRenderingContext2D,
+  assets: LoadedCatchFishAssets | null,
+  cw: number,
+  ch: number,
+  bloodyAlpha = 0,
+) {
+  if (!assets?.background) {
+    ctx.fillStyle = "#2a2218";
+    ctx.fillRect(0, 0, cw, ch);
+    return;
+  }
+
+  drawCoverBackground(ctx, assets.background, cw, ch, 1);
+  if (bloodyAlpha > 0 && assets.backgroundBloody) {
+    drawCoverBackground(ctx, assets.backgroundBloody, cw, ch, bloodyAlpha);
+  }
 }
 
 function fishDrawMetrics(meta: FishSpriteMeta, gameRadius: number) {

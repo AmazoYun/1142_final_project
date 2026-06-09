@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { narrativeDefault } from "@/data/narrative-default";
+import { navigateWithFade } from "@/lib/navigation/navigateWithFade";
 import type { StallId } from "@/lib/narrative/types";
 
 type Props = {
@@ -21,7 +22,7 @@ export default function StallRevisitBar({ stallId }: Props) {
           type="button"
           className="game-btn-primary w-full text-xs sm:w-auto sm:min-w-[120px] sm:text-sm"
           data-ui-sound="enter"
-          onClick={() => router.push(script.href)}
+          onClick={() => void navigateWithFade(router, script.href)}
         >
           {script.enterLabel}
         </button>

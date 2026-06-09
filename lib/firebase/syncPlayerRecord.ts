@@ -1,9 +1,9 @@
 "use client";
 
 import { upsertLeaderboardEntry } from "@/lib/firebase/leaderboard";
-import type { PlayerRecord } from "@/store/playerStore";
+import type { SaveRecord } from "@/lib/player/saveTypes";
 
-export function syncPlayerRecordToFirebase(record: PlayerRecord) {
+export function syncPlayerRecordToFirebase(record: SaveRecord) {
   void upsertLeaderboardEntry({
     nickname: record.nickname,
     totalScore: record.totalScore,

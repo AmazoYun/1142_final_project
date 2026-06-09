@@ -2,17 +2,60 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
-import IntroFlow from "@/components/intro/IntroFlow";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import GamePageFallback from "@/components/game/GamePageFallback";
+
+const IntroFlow = lazy(() => import("@/components/intro/IntroFlow"));
+import CreditsModal from "@/components/home/CreditsModal";
+import EndingSelectModal from "@/components/home/EndingSelectModal";
+import LoginModal from "@/components/home/LoginModal";
+import SaveListModal from "@/components/home/SaveListModal";
 import { navigateWithFade } from "@/lib/navigation/navigateWithFade";
 import { usePageFadeIn } from "@/lib/navigation/usePageFadeIn";
-import { stopHubBgm } from "@/lib/market/hubSounds";
+import {
+  fadeOutMainBgm,
+  isMainBgmPlaying,
+  preloadMainBgm,
+  startMainBgm,
+  stopHubBgm,
+} from "@/lib/market/hubSounds";
 import { resetGameProgress } from "@/lib/player/resetGameProgress";
 import { usePlayerStore } from "@/store/playerStore";
+import type { EndingId } from "@/lib/endings/types";
 import { useNarrativeStore } from "@/store/narrativeStore";
 
 type BootPhase = "loading" | "intro" | "home";
-type NicknamePhase = "input" | "continue" | "finished" | "new";
+type BgFade = "hidden" | "visible" | "leaving";
+type HomeModal = null | "login" | "save-play" | "save-view" | "ending-select" | "credits";
+
+const INTRO_REPLAY_LEAVE_MS = 1200;
+
+function StartPageBackground({ fade }: { fade: BgFade }) {
+  const fadeClass =
+    fade === "visible" ? "is-visible" : fade === "leaving" ? "is-leaving" : "";
+
+  return (
+    <div className={`start-page__bg ${fadeClass}`.trim()} aria-hidden>
+      <div className="start-page__video-stage">
+        <video
+          className="start-page__video"
+          autoPlay
+          loop
+          muted
+          playsInline
+          preload="auto"
+        >
+          <source src="/narrative/intro.webm" type="video/webm" />
+        </video>
+        <div className="start-page__chromatic start-page__chromatic--r" />
+        <div className="start-page__chromatic start-page__chromatic--b" />
+      </div>
+      <div className="start-page__scanlines" />
+      <div className="start-page__noise" />
+      <div className="start-page__overlay" />
+    </div>
+  );
+}
 
 export default function StartPage() {
   const router = useRouter();
@@ -20,19 +63,33 @@ export default function StartPage() {
 
   const hydratePlayers = usePlayerStore((s) => s.hydrate);
   const playersHydrated = usePlayerStore((s) => s.hydrated);
-  const findRecord = usePlayerStore((s) => s.findRecord);
-  const beginNewRun = usePlayerStore((s) => s.beginNewRun);
-  const resumeRun = usePlayerStore((s) => s.resumeRun);
+  const loggedInNickname = usePlayerStore((s) => s.loggedInNickname);
+  const saves = usePlayerStore((s) => s.saves);
+  const login = usePlayerStore((s) => s.login);
+  const syncProfileFromCloud = usePlayerStore((s) => s.syncProfileFromCloud);
+  const logout = usePlayerStore((s) => s.logout);
+  const flushActiveSaveToCloud = usePlayerStore((s) => s.flushActiveSaveToCloud);
+  const getPlayerSaves = usePlayerStore((s) => s.getPlayerSaves);
+  const createNewSave = usePlayerStore((s) => s.createNewSave);
+  const loadSave = usePlayerStore((s) => s.loadSave);
 
   const hydrateNarrative = useNarrativeStore((s) => s.hydrate);
   const narrativeHydrated = useNarrativeStore((s) => s.hydrated);
   const introDone = useNarrativeStore((s) => s.introDone);
 
   const [bootPhase, setBootPhase] = useState<BootPhase>("loading");
-  const [modalOpen, setModalOpen] = useState(false);
+  const [showIntroReplay, setShowIntroReplay] = useState(false);
+  const [introLeaving, setIntroLeaving] = useState(false);
+  const [bgFade, setBgFade] = useState<BgFade>("hidden");
+  const [showButtons, setShowButtons] = useState(false);
+  const [homeModal, setHomeModal] = useState<HomeModal>(null);
   const [nickname, setNickname] = useState("");
-  const [phase, setPhase] = useState<NicknamePhase>("input");
-  const [statusMessage, setStatusMessage] = useState("");
+
+  const isLoggedIn = !!loggedInNickname;
+  const playerSaves = useMemo(
+    () => (loggedInNickname ? getPlayerSaves(loggedInNickname) : []),
+    [getPlayerSaves, loggedInNickname, saves],
+  );
 
   useEffect(() => {
     hydratePlayers();
@@ -41,61 +98,135 @@ export default function StartPage() {
   }, [hydratePlayers, hydrateNarrative]);
 
   useEffect(() => {
+    if (!playersHydrated || !loggedInNickname) return;
+    void syncProfileFromCloud(loggedInNickname);
+  }, [playersHydrated, loggedInNickname, syncProfileFromCloud]);
+
+  useEffect(() => {
     if (!playersHydrated || !narrativeHydrated) return;
     setBootPhase(introDone ? "home" : "intro");
   }, [playersHydrated, narrativeHydrated, introDone]);
 
+  useEffect(() => {
+    if (bootPhase !== "home") {
+      setBgFade("hidden");
+      setShowButtons(false);
+      return;
+    }
+    stopHubBgm();
+    preloadMainBgm();
+    if (isMainBgmPlaying()) {
+      setShowButtons(true);
+    } else {
+      setShowButtons(false);
+    }
+    const frame = requestAnimationFrame(() => setBgFade("visible"));
+    return () => {
+      cancelAnimationFrame(frame);
+      void fadeOutMainBgm();
+      setBgFade("hidden");
+      setShowButtons(false);
+    };
+  }, [bootPhase]);
+
+  const revealButtons = useCallback(() => {
+    startMainBgm();
+    setShowButtons(true);
+  }, []);
+
+  const leaveHome = useCallback(
+    async (href: string) => {
+      setBgFade("leaving");
+      await fadeOutMainBgm();
+      await navigateWithFade(router, href);
+    },
+    [router],
+  );
+
   const enterMarket = useCallback(async () => {
-    await navigateWithFade(router, "/market");
-  }, [router]);
+    await leaveHome("/market");
+  }, [leaveHome]);
 
-  const resolveNickname = useCallback(() => {
-    const trimmed = nickname.trim();
-    if (!trimmed) return;
+  const replayIntro = useCallback(async () => {
+    if (introLeaving) return;
+    await fadeOutMainBgm();
+    setIntroLeaving(true);
+    setBgFade("leaving");
+    window.setTimeout(() => {
+      setShowIntroReplay(true);
+      setIntroLeaving(false);
+    }, INTRO_REPLAY_LEAVE_MS);
+  }, [introLeaving]);
 
-    const record = findRecord(trimmed);
-    if (!record) {
-      setPhase("new");
-      setStatusMessage("尚無此玩家紀錄，將新增玩家紀錄開啟新遊戲");
+  const finishIntroView = useCallback(() => {
+    setShowIntroReplay(false);
+    setIntroLeaving(false);
+    if (bootPhase === "intro") {
+      setBootPhase("home");
       return;
     }
-    if (record.endingId) {
-      setPhase("finished");
-      setStatusMessage("已有此玩家紀錄，上一輪遊戲已結束，將開啟新遊戲");
-      return;
-    }
-    if (record.isActive) {
-      setPhase("continue");
-      setStatusMessage("已有此玩家紀錄，請選擇繼續遊戲或開啟新遊戲");
-      return;
-    }
-    setPhase("new");
-    setStatusMessage("尚無此玩家紀錄，將新增玩家紀錄開啟新遊戲");
-  }, [findRecord, nickname]);
+    setShowButtons(false);
+    setBgFade("hidden");
+    requestAnimationFrame(() => setBgFade("visible"));
+  }, [bootPhase]);
 
-  const confirmNewGame = useCallback(() => {
+  const startNewSaveAndEnter = useCallback(
+    (name: string) => {
+      resetGameProgress();
+      createNewSave(name);
+      setHomeModal(null);
+      void enterMarket();
+    },
+    [createNewSave, enterMarket],
+  );
+
+  const enterExistingSave = useCallback(
+    (saveId: string) => {
+      loadSave(saveId);
+      setHomeModal(null);
+      void enterMarket();
+    },
+    [loadSave, enterMarket],
+  );
+
+  const confirmLogin = useCallback(async () => {
     const trimmed = nickname.trim();
     if (!trimmed) return;
-    resetGameProgress();
-    beginNewRun(trimmed);
-    setModalOpen(false);
-    void enterMarket();
-  }, [beginNewRun, nickname, enterMarket]);
+    login(trimmed);
+    await syncProfileFromCloud(trimmed);
+    setHomeModal("save-play");
+  }, [login, syncProfileFromCloud, nickname]);
 
-  const confirmContinue = useCallback(() => {
-    const trimmed = nickname.trim();
-    if (!trimmed) return;
-    resumeRun(trimmed);
-    setModalOpen(false);
-    void enterMarket();
-  }, [nickname, resumeRun, enterMarket]);
-
-  const openStartModal = () => {
+  const openStartFlow = useCallback(async () => {
+    if (isLoggedIn && loggedInNickname) {
+      await syncProfileFromCloud(loggedInNickname);
+      setHomeModal("save-play");
+      return;
+    }
     setNickname("");
-    setPhase("input");
-    setStatusMessage("");
-    setModalOpen(true);
-  };
+    setHomeModal("login");
+  }, [isLoggedIn, loggedInNickname, syncProfileFromCloud]);
+
+  const openSaveHistory = useCallback(async () => {
+    if (!isLoggedIn || !loggedInNickname) return;
+    await syncProfileFromCloud(loggedInNickname);
+    setHomeModal("save-view");
+  }, [isLoggedIn, loggedInNickname, syncProfileFromCloud]);
+
+  const watchEnding = useCallback(
+    (endingId: EndingId) => {
+      setHomeModal(null);
+      void leaveHome(`/ending?preview=${endingId}`);
+    },
+    [leaveHome],
+  );
+
+  const handleLogout = useCallback(() => {
+    void flushActiveSaveToCloud().finally(() => {
+      logout();
+      setHomeModal(null);
+    });
+  }, [flushActiveSaveToCloud, logout]);
 
   if (bootPhase === "loading") {
     return (
@@ -105,94 +236,144 @@ export default function StartPage() {
     );
   }
 
-  if (bootPhase === "intro") {
+  if (bootPhase === "intro" || (showIntroReplay && !introLeaving)) {
     return (
-      <IntroFlow
-        onComplete={() => {
-          setBootPhase("home");
-        }}
-      />
+      <Suspense fallback={<GamePageFallback />}>
+        <IntroFlow key={showIntroReplay ? "intro-replay" : "intro-first"} onComplete={finishIntroView} />
+      </Suspense>
     );
   }
 
-  return (
-    <div className="start-page min-h-screen flex flex-col items-center px-4 py-10 sm:py-14">
-      <div className="w-full max-w-xl flex flex-col items-center gap-8">
-        <header className="text-center space-y-2">
-          <h1 className="game-title text-2xl sm:text-3xl tracking-widest">無人夜市</h1>
-          <p className="text-sm opacity-70 tracking-wide">2005 年 6 月，畢業旅行的那一夜</p>
-        </header>
+  const homeBgFade: BgFade = introLeaving ? "leaving" : bgFade;
 
-        <div className="flex flex-col sm:flex-row items-center gap-4">
-          <button type="button" className="game-btn-primary text-base px-10 py-3" onClick={openStartModal}>
-            開始遊戲
-          </button>
-          <Link href="/leaderboard" className="game-btn-ghost text-base px-10 py-3" data-ui-sound="enter">
-            排行榜
-          </Link>
+  return (
+    <div className="start-page">
+      <StartPageBackground fade={homeBgFade} />
+      {introLeaving ? <div className="intro-replay-fade-overlay" aria-hidden /> : null}
+      <div
+        className={`start-page__content${introLeaving ? " start-page__content--leaving" : ""}${showButtons ? "" : " start-page__content--clickable"}`}
+        onClick={showButtons || introLeaving ? undefined : revealButtons}
+        onKeyDown={
+          showButtons
+            ? undefined
+            : (e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  revealButtons();
+                }
+              }
+        }
+        role={showButtons ? undefined : "button"}
+        tabIndex={showButtons ? undefined : 0}
+      >
+        <div className="w-full max-w-xl flex flex-col items-center gap-8">
+          <header className="start-page__header text-center space-y-2">
+            <h1 className="start-page__title game-title text-2xl sm:text-3xl tracking-widest">
+              <span className="start-page__title-base">無人夜市</span>
+              <span className="start-page__title-ghost start-page__title-ghost--r" aria-hidden>
+                無人夜市
+              </span>
+              <span className="start-page__title-ghost start-page__title-ghost--b" aria-hidden>
+                無人夜市
+              </span>
+            </h1>
+            <p className="start-page__subtitle text-sm opacity-70 tracking-wide">
+              The Liminal Market
+            </p>
+            {isLoggedIn ? (
+              <p className="text-xs opacity-60 tracking-wide">目前玩家：{loggedInNickname}</p>
+            ) : null}
+          </header>
+
+          <div
+            className={`start-page__actions flex w-full flex-col items-stretch gap-4${showButtons ? " is-visible" : ""}`}
+          >
+            <button type="button" className="game-btn-primary w-full text-center text-base px-10 py-3" onClick={openStartFlow}>
+              開始遊戲
+            </button>
+            <button
+              type="button"
+              className={`game-btn-ghost w-full text-center text-base px-10 py-3${isLoggedIn ? "" : " opacity-45 cursor-not-allowed"}`}
+              disabled={!isLoggedIn}
+              onClick={openSaveHistory}
+            >
+              存檔紀錄
+            </button>
+            <button
+              type="button"
+              className="game-btn-ghost w-full text-center text-base px-10 py-3"
+              disabled={introLeaving}
+              onClick={() => void replayIntro()}
+            >
+              前導劇情
+            </button>
+            <button
+              type="button"
+              className="game-btn-ghost w-full text-center text-base px-10 py-3"
+              onClick={() => setHomeModal("ending-select")}
+            >
+              觀看結局
+            </button>
+            <Link
+              href="/leaderboard"
+              className="game-btn-ghost block w-full text-center text-base px-10 py-3"
+              data-ui-sound="enter"
+              onClick={(e) => {
+                e.preventDefault();
+                void leaveHome("/leaderboard");
+              }}
+            >
+              排行榜
+            </Link>
+            <button
+              type="button"
+              className="game-btn-ghost w-full text-center text-base px-10 py-3"
+              onClick={() => setHomeModal("credits")}
+            >
+              Credits
+            </button>
+            {isLoggedIn ? (
+              <button
+                type="button"
+                className="game-btn-ghost w-full text-center text-base px-10 py-3 opacity-70"
+                onClick={handleLogout}
+              >
+                登出
+              </button>
+            ) : null}
+          </div>
         </div>
       </div>
 
-      {modalOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
-          <div className="game-panel w-full max-w-md p-6 space-y-4">
-            <h2 className="game-title text-center text-lg">輸入玩家暱稱</h2>
+      <LoginModal
+        open={homeModal === "login"}
+        nickname={nickname}
+        onNicknameChange={setNickname}
+        onClose={() => setHomeModal(null)}
+        onConfirm={confirmLogin}
+      />
 
-            {phase === "input" ? (
-              <>
-                <input
-                  type="text"
-                  value={nickname}
-                  onChange={(e) => setNickname(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") resolveNickname();
-                  }}
-                  className="w-full px-3 py-2 bg-paper border-2 border-ink text-ink text-sm"
-                  placeholder="請輸入暱稱"
-                  maxLength={20}
-                  autoFocus
-                />
-                <div className="flex justify-end gap-3">
-                  <button type="button" className="game-btn-ghost" onClick={() => setModalOpen(false)}>
-                    取消
-                  </button>
-                  <button
-                    type="button"
-                    className="game-btn-primary"
-                    disabled={!nickname.trim()}
-                    onClick={resolveNickname}
-                  >
-                    下一步
-                  </button>
-                </div>
-              </>
-            ) : (
-              <>
-                <p className="text-sm leading-relaxed">{statusMessage}</p>
-                <p className="text-xs opacity-70">玩家：{nickname.trim()}</p>
-                <div className="flex flex-wrap justify-end gap-3">
-                  <button type="button" className="game-btn-ghost" onClick={() => setPhase("input")}>
-                    返回
-                  </button>
-                  {phase === "continue" ? (
-                    <>
-                      <button type="button" className="game-btn-ghost" onClick={confirmNewGame}>
-                        開啟新遊戲
-                      </button>
-                      <button type="button" className="game-btn-primary" onClick={confirmContinue}>
-                        繼續遊戲
-                      </button>
-                    </>
-                  ) : (
-                    <button type="button" className="game-btn-primary" onClick={confirmNewGame}>
-                      開始
-                    </button>
-                  )}
-                </div>
-              </>
-            )}
-          </div>
-        </div>
+      {homeModal === "ending-select" ? (
+        <EndingSelectModal
+          open
+          onClose={() => setHomeModal(null)}
+          onSelectEnding={watchEnding}
+        />
+      ) : null}
+
+      <CreditsModal open={homeModal === "credits"} onClose={() => setHomeModal(null)} />
+
+      {loggedInNickname && (homeModal === "save-play" || homeModal === "save-view") ? (
+        <SaveListModal
+          open
+          title={homeModal === "save-play" ? "選擇存檔" : "存檔紀錄"}
+          nickname={loggedInNickname}
+          saves={playerSaves}
+          mode={homeModal === "save-play" ? "play" : "view"}
+          onClose={() => setHomeModal(null)}
+          onSelectSave={homeModal === "save-play" ? enterExistingSave : undefined}
+          onNewSave={homeModal === "save-play" ? () => startNewSaveAndEnter(loggedInNickname) : undefined}
+        />
       ) : null}
     </div>
   );

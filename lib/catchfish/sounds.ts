@@ -9,14 +9,63 @@ const CATCHING_SRC = "/sfx/catchfish/catching.mp3";
 const FISH_MISS_SRC = "/sfx/catchfish/fish_miss.mp3";
 const CAUGHT_SRC = "/sfx/catchfish/caught.mp3";
 const NET_BREAK_SRC = "/sfx/catchfish/net_break.mp3";
+const WATER_AMBIENT_SRC = "/sfx/catchfish/water.mp3";
+const DRIP_AMBIENT_SRC = "/sfx/catchfish/drip.mp3";
+
+const WATER_AMBIENT_VOLUME = 0.04;
+const DRIP_AMBIENT_VOLUME = 0.045;
 
 const NET_SOUND_COOLDOWN_MS = 65;
-/** 瞬間移動速度（px/s）超過此值才播放網子音效 */
+const NET_PEAK_VOLUME = 0.13;
+/** 撈網瞬間移動速度（px/s）超過此值才播放 */
 const NET_SOUND_MIN_SPEED = 180;
+/** 魚游動瞬間速度（px/s）超過此值才播放 */
+const FISH_SWIM_SOUND_MIN_SPEED = 125;
+
+export type CatchFishAmbientSfx = {
+  preload: () => void;
+  start: () => void;
+  dispose: () => void;
+};
+
+export function createCatchFishAmbientSfx(): CatchFishAmbientSfx {
+  const water = new Audio(WATER_AMBIENT_SRC);
+  water.preload = "auto";
+  water.loop = true;
+  water.volume = WATER_AMBIENT_VOLUME;
+
+  const drip = new Audio(DRIP_AMBIENT_SRC);
+  drip.preload = "auto";
+  drip.loop = true;
+  drip.volume = DRIP_AMBIENT_VOLUME;
+
+  let active = false;
+
+  return {
+    preload: () => {
+      water.load();
+      drip.load();
+    },
+    start: () => {
+      if (active) return;
+      active = true;
+      void water.play().catch(() => {});
+      void drip.play().catch(() => {});
+    },
+    dispose: () => {
+      active = false;
+      water.pause();
+      water.currentTime = 0;
+      drip.pause();
+      drip.currentTime = 0;
+    },
+  };
+}
 
 export type CatchFishSoundFx = {
   preload: () => void;
   maybePlayNetOnMove: (instantSpeed: number) => void;
+  maybePlayFishOnFastSwim: (instantSpeed: number) => void;
   startCatching: () => void;
   stopCatching: () => void;
   playFishMiss: () => void;
@@ -39,7 +88,7 @@ export function createCatchFishSoundFx(): CatchFishSoundFx {
   const netClips = NET_SRC.map((src) => {
     const audio = new Audio(src);
     audio.preload = "auto";
-    audio.volume = 0.17;
+    audio.volume = NET_PEAK_VOLUME;
     return audio;
   });
 
@@ -77,10 +126,22 @@ export function createCatchFishSoundFx(): CatchFishSoundFx {
 
   const netBreak = new Audio(NET_BREAK_SRC);
   netBreak.preload = "auto";
-  netBreak.volume = 0.32;
+  netBreak.volume = 0.24;
 
-  let lastNetSoundAt = 0;
+  let lastRustleSoundAt = 0;
   let catchingActive = false;
+
+  const tryPlayRustleSound = (instantSpeed: number, minSpeed: number) => {
+    if (instantSpeed < minSpeed) return;
+
+    const now = performance.now();
+    if (now - lastRustleSoundAt < NET_SOUND_COOLDOWN_MS) return;
+
+    const pick = netClips[Math.floor(Math.random() * netClips.length)]!;
+    if (playNetOneShot(pick)) {
+      lastRustleSoundAt = now;
+    }
+  };
 
   const stopCatching = () => {
     if (!catchingActive) return;
@@ -96,15 +157,10 @@ export function createCatchFishSoundFx(): CatchFishSoundFx {
       }
     },
     maybePlayNetOnMove: (instantSpeed) => {
-      if (instantSpeed < NET_SOUND_MIN_SPEED) return;
-
-      const now = performance.now();
-      if (now - lastNetSoundAt < NET_SOUND_COOLDOWN_MS) return;
-
-      const pick = netClips[Math.floor(Math.random() * netClips.length)]!;
-      if (playNetOneShot(pick)) {
-        lastNetSoundAt = now;
-      }
+      tryPlayRustleSound(instantSpeed, NET_SOUND_MIN_SPEED);
+    },
+    maybePlayFishOnFastSwim: (instantSpeed) => {
+      tryPlayRustleSound(instantSpeed, FISH_SWIM_SOUND_MIN_SPEED);
     },
     startCatching: () => {
       if (catchingActive) return;

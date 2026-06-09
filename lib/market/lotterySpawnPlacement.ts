@@ -76,7 +76,8 @@ function isValidLotteryWorldX(
   return isWorldRatioClearOnFront(worldRatio, frontMask);
 }
 
-function buildCandidates(
+/** 道路上可見且避開陰影的落點候選（與路邊彩券相同規則） */
+export function buildLotteryRoadCandidates(
   metrics: HubMetrics,
   shadowPlacements: HubShadowPlacement[],
   frontMask: LotteryFrontMask,
@@ -110,7 +111,7 @@ export function pickLotteryPlacements(
 ): LotteryPlacement[] {
   if (count <= 0) return [];
 
-  const candidates = shuffle(buildCandidates(metrics, shadowPlacements, frontMask));
+  const candidates = shuffle(buildLotteryRoadCandidates(metrics, shadowPlacements, frontMask));
   if (candidates.length === 0) return [];
 
   const picked: number[] = [];

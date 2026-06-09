@@ -2,8 +2,8 @@
 
 const BUTTON_SRC = "/sfx/hub/button.mp3";
 const ENTER_SRC = "/sfx/hub/enter.mp3";
-const UI_BUTTON_VOLUME = 0.225;
-const UI_ENTER_VOLUME = 0.25;
+const UI_BUTTON_VOLUME = 0.18;
+const UI_ENTER_VOLUME = 0.2;
 
 let buttonTemplate: HTMLAudioElement | null = null;
 let enterTemplate: HTMLAudioElement | null = null;

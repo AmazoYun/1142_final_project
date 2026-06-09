@@ -4,10 +4,13 @@ import {
   type HubMetrics,
 } from "@/lib/market/hubLayout";
 import type { StallId } from "@/lib/narrative/types";
+import { createAmbientRandomSfx } from "@/lib/sfx/randomSfx";
 
 const HUB_BGM_SRC = "/sfx/hub/BGM.mp3";
+const MAIN_BGM_SRC = "/sfx/hub/main_bgm.mp3";
 const CASH_SRC = "/sfx/hub/cash.mp3";
 const REWARD_SRC = "/sfx/hub/reward.mp3";
+const GET_COIN_SRC = "/sfx/hub/get_coin.mp3";
 
 const FOOTSTEP_SRC = [
   "/sfx/hub/footstep_1.mp3",
@@ -22,13 +25,17 @@ const STALL_BGM_SRC: Record<StallId, string> = {
   catchfish: "/sfx/hub/bgm_stall_4.mp3",
 };
 
-const HUB_BGM_VOLUME = 0.07;
+const HUB_BGM_VOLUME = 0.12;
+const MAIN_BGM_VOLUME = 0.15;
+export const MAIN_BGM_FADE_MS = 2000;
 const FOOTSTEP_VOLUME = 0.05;
-const CASH_VOLUME = 0.5;
+const CASH_VOLUME = 0.35;
 const REWARD_VOLUME = 0.25;
+const GET_COIN_VOLUME = 0.15;
 
 let cashAudio: HTMLAudioElement | null = null;
 let rewardAudio: HTMLAudioElement | null = null;
+let getCoinAudio: HTMLAudioElement | null = null;
 
 function playOneShot(template: HTMLAudioElement, volume: number) {
   const clip = template.cloneNode() as HTMLAudioElement;
@@ -54,6 +61,15 @@ function getRewardAudio() {
   return rewardAudio;
 }
 
+function getGetCoinAudio() {
+  if (!getCoinAudio) {
+    getCoinAudio = new Audio(GET_COIN_SRC);
+    getCoinAudio.preload = "auto";
+    getCoinAudio.volume = GET_COIN_VOLUME;
+  }
+  return getCoinAudio;
+}
+
 /** 背包兌換彩券為代幣時播放 */
 export function playCashSound() {
   playOneShot(getCashAudio(), CASH_VOLUME);
@@ -63,6 +79,11 @@ export function playCashSound() {
 export function playRewardSound() {
   playOneShot(getRewardAudio(), REWARD_VOLUME);
 }
+
+/** 拾取地上彩票時播放 */
+export function playGetCoinSound() {
+  playOneShot(getGetCoinAudio(), GET_COIN_VOLUME);
+}
 /** 攤位 BGM 音量追蹤目標值的平滑係數（愈小愈慢） */
 const STALL_BGM_FADE_LERP = 0.1;
 const STALL_BGM_SILENCE_THRESHOLD = 0.003;
@@ -71,6 +92,41 @@ const STALL_BGM_SILENCE_THRESHOLD = 0.003;
 const WALK_STEP_MS = (1170 / 3) * 2;
 
 let hubBgmAudio: HTMLAudioElement | null = null;
+let mainBgmAudio: HTMLAudioElement | null = null;
+let mainBgmFadeRaf = 0;
+
+function cancelMainBgmFade() {
+  if (!mainBgmFadeRaf) return;
+  cancelAnimationFrame(mainBgmFadeRaf);
+  mainBgmFadeRaf = 0;
+}
+
+function fadeMainBgmTo(target: number, durationMs: number): Promise<void> {
+  cancelMainBgmFade();
+  const audio = getMainBgmAudio();
+  const from = audio.volume;
+  if (durationMs <= 0 || Math.abs(from - target) < 0.001) {
+    audio.volume = target;
+    return Promise.resolve();
+  }
+
+  const start = performance.now();
+  return new Promise((resolve) => {
+    const tick = (now: number) => {
+      const t = Math.min(1, (now - start) / durationMs);
+      const eased = t * (2 - t);
+      audio.volume = from + (target - from) * eased;
+      if (t < 1) {
+        mainBgmFadeRaf = requestAnimationFrame(tick);
+        return;
+      }
+      mainBgmFadeRaf = 0;
+      audio.volume = target;
+      resolve();
+    };
+    mainBgmFadeRaf = requestAnimationFrame(tick);
+  });
+}
 
 function makeLoopAudio(src: string, volume: number) {
   const audio = new Audio(src);
@@ -102,6 +158,57 @@ export function stopHubBgm() {
   hubBgmAudio.currentTime = 0;
 }
 
+function getMainBgmAudio() {
+  if (!mainBgmAudio) {
+    mainBgmAudio = makeLoopAudio(MAIN_BGM_SRC, MAIN_BGM_VOLUME);
+  }
+  return mainBgmAudio;
+}
+
+/** 預載首頁 BGM（不自動播放，避免瀏覽器阻擋） */
+export function preloadMainBgm() {
+  getMainBgmAudio().load();
+}
+
+/** 首頁主選單 BGM（淡入；需在使用者點擊後呼叫） */
+export function startMainBgm() {
+  const audio = getMainBgmAudio();
+  cancelMainBgmFade();
+  audio.load();
+  if (!audio.paused && audio.volume >= MAIN_BGM_VOLUME * 0.9) return;
+  if (audio.paused) {
+    audio.volume = 0;
+    void audio.play().catch(() => {});
+  }
+  void fadeMainBgmTo(MAIN_BGM_VOLUME, MAIN_BGM_FADE_MS);
+}
+
+/** 首頁主選單 BGM（淡出後停止） */
+export function fadeOutMainBgm(): Promise<void> {
+  if (!mainBgmAudio || mainBgmAudio.paused) {
+    return Promise.resolve();
+  }
+  return fadeMainBgmTo(0, MAIN_BGM_FADE_MS).then(() => {
+    if (!mainBgmAudio) return;
+    mainBgmAudio.pause();
+    mainBgmAudio.currentTime = 0;
+    mainBgmAudio.volume = MAIN_BGM_VOLUME;
+  });
+}
+
+export function stopMainBgm() {
+  cancelMainBgmFade();
+  if (!mainBgmAudio) return;
+  mainBgmAudio.pause();
+  mainBgmAudio.currentTime = 0;
+  mainBgmAudio.volume = MAIN_BGM_VOLUME;
+}
+
+/** 首頁 BGM 是否正在播放（結局返回主畫面時用來延續播放） */
+export function isMainBgmPlaying(): boolean {
+  return !!mainBgmAudio && !mainBgmAudio.paused && mainBgmAudio.volume > 0.01;
+}
+
 export type HubSoundFx = {
   preload: () => void;
   startHubBgm: () => void;
@@ -115,6 +222,8 @@ export type HubSoundFx = {
 };
 
 export function createHubSoundFx(): HubSoundFx {
+  const ambientSfx = createAmbientRandomSfx();
+
   const footstepClips = FOOTSTEP_SRC.map((src) => {
     const audio = new Audio(src);
     audio.preload = "auto";
@@ -223,11 +332,15 @@ export function createHubSoundFx(): HubSoundFx {
   return {
     preload: () => {
       getHubBgmAudio().load();
+      ambientSfx.preload();
       for (const audio of [...footstepClips, ...Object.values(stallTracks)]) {
         audio.load();
       }
     },
-    startHubBgm,
+    startHubBgm: () => {
+      startHubBgm();
+      ambientSfx.start();
+    },
     setWalking: (active) => {
       if (active) {
         if (walkingActive) return;
@@ -251,6 +364,7 @@ export function createHubSoundFx(): HubSoundFx {
       stopWalking();
       stopStallFadeLoop();
       stopAllStallTracks();
+      ambientSfx.dispose();
     },
   };
 }

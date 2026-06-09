@@ -7,6 +7,12 @@ import { getCollectibleDef } from "@/data/collectibles-default";
 import BackpackLotteryExchange from "./BackpackLotteryExchange";
 import BackpackRedeemButton from "./BackpackRedeemButton";
 import {
+  buildBackpackGridEntries,
+  lockedSpecialHint,
+  SPECIAL_ITEM_STALL,
+  type BackpackGridEntry,
+} from "@/lib/collectibles/backpackGrid";
+import {
   BACKPACK_BACKGROUND,
   BACKPACK_DETAIL_DESC,
   BACKPACK_DETAIL_IMAGE,
@@ -48,10 +54,6 @@ const LOTTERY_META: Record<
     faceValue: 50,
   },
 };
-
-type GridEntry =
-  | { kind: "collectible"; id: CollectibleId; slotIndex: number }
-  | { kind: "lottery"; ticketType: LotteryTicketType; count: number; slotIndex: number };
 
 export default function BackpackView() {
   const hydrate = useCollectibleStore((s) => s.hydrate);
@@ -97,28 +99,22 @@ export default function BackpackView() {
     [stageSize.w, stageSize.h],
   );
 
-  const gridEntries = useMemo(() => {
-    const entries: GridEntry[] = [];
-    let slotIndex = 0;
-    for (const id of acquired) {
-      if (slotIndex >= GRID_SLOTS.length) break;
-      entries.push({ kind: "collectible", id, slotIndex });
-      slotIndex += 1;
-    }
-    if (ticket10 > 0 && slotIndex < GRID_SLOTS.length) {
-      entries.push({ kind: "lottery", ticketType: "ticket10", count: ticket10, slotIndex });
-      slotIndex += 1;
-    }
-    if (ticket50 > 0 && slotIndex < GRID_SLOTS.length) {
-      entries.push({ kind: "lottery", ticketType: "ticket50", count: ticket50, slotIndex });
-    }
-    return entries;
-  }, [acquired, ticket10, ticket50]);
+  const gridEntries = useMemo(
+    () => buildBackpackGridEntries(acquired, ticket10, ticket50),
+    [acquired, ticket10, ticket50],
+  );
 
   const selectedDef = selectedId ? getCollectibleDef(selectedId) : undefined;
   const selectedLotteryCount =
     selectedLottery === "ticket10" ? ticket10 : selectedLottery === "ticket50" ? ticket50 : 0;
-  const showCollectibleDetail = selectedDef && acquired.includes(selectedDef.id) && !selectedLottery;
+  const selectedSpecialLocked =
+    selectedId &&
+    SPECIAL_ITEM_STALL[selectedId] &&
+    !acquired.includes(selectedId);
+  const showCollectibleDetail =
+    selectedDef &&
+    (acquired.includes(selectedDef.id) || selectedSpecialLocked) &&
+    !selectedLottery;
   const showLotteryDetail = selectedLottery !== null && selectedLotteryCount > 0;
 
   useEffect(() => {
@@ -146,6 +142,122 @@ export default function BackpackView() {
     setSelectedLottery(type);
   };
 
+  const renderSlot = (entry: BackpackGridEntry) => {
+    const slot = GRID_SLOTS[entry.slotIndex];
+    if (!slot || !cover) return null;
+    const box = slotStyleInCover(slot, cover);
+    const itemSize = Math.min(box.width, box.height) * BACKPACK_ITEM_SIZE_RATIO;
+
+    if (entry.kind === "special") {
+      const def = getCollectibleDef(entry.id);
+      if (!def) return null;
+      const isSelected = selectedId === entry.id && !selectedLottery;
+      const imgSrc = BACKPACK_ITEM_IMAGES[entry.id] ?? def.icon;
+      return (
+        <button
+          key={`special-${entry.id}`}
+          type="button"
+          className={`backpack-item-slot absolute ${
+            isSelected ? "backpack-item-slot--selected" : ""
+          }`}
+          style={toAbsoluteStyle(box)}
+          onClick={() => selectCollectible(entry.id)}
+          aria-label={entry.acquired ? def.name : "???"}
+        >
+          {entry.acquired ? (
+            <>
+              <span
+                className="backpack-item-slot__shadow"
+                style={{ width: itemSize * 0.72, height: itemSize * 0.14 }}
+                aria-hidden
+              />
+              <Image
+                src={imgSrc}
+                alt=""
+                width={Math.round(itemSize)}
+                height={Math.round(itemSize)}
+                className="backpack-item-slot__icon"
+                style={{ width: itemSize, height: itemSize }}
+                unoptimized
+              />
+            </>
+          ) : (
+            <Image
+              src={imgSrc}
+              alt=""
+              width={Math.round(itemSize)}
+              height={Math.round(itemSize)}
+              className="backpack-item-slot__icon backpack-item-slot__icon--silhouette"
+              style={{ width: itemSize, height: itemSize }}
+              unoptimized
+            />
+          )}
+        </button>
+      );
+    }
+
+    if (entry.kind === "collectible") {
+      const def = getCollectibleDef(entry.id);
+      if (!def) return null;
+      const isSelected = selectedId === entry.id && !selectedLottery;
+      return (
+        <button
+          key={`item-${entry.id}`}
+          type="button"
+          className={`backpack-item-slot absolute ${
+            isSelected ? "backpack-item-slot--selected" : ""
+          }`}
+          style={toAbsoluteStyle(box)}
+          onClick={() => selectCollectible(entry.id)}
+          aria-label={def.name}
+        >
+          <span
+            className="backpack-item-slot__shadow"
+            style={{ width: itemSize * 0.72, height: itemSize * 0.14 }}
+            aria-hidden
+          />
+          <Image
+            src={BACKPACK_ITEM_IMAGES[entry.id] ?? def.icon}
+            alt=""
+            width={Math.round(itemSize)}
+            height={Math.round(itemSize)}
+            className="backpack-item-slot__icon"
+            style={{ width: itemSize, height: itemSize }}
+            unoptimized
+          />
+        </button>
+      );
+    }
+
+    const meta = LOTTERY_META[entry.ticketType];
+    const isSelected = selectedLottery === entry.ticketType;
+    return (
+      <button
+        key={`lottery-${entry.ticketType}`}
+        type="button"
+        className={`backpack-item-slot absolute ${
+          isSelected ? "backpack-item-slot--selected" : ""
+        }`}
+        style={toAbsoluteStyle(box)}
+        onClick={() => selectLottery(entry.ticketType)}
+        aria-label={meta.name}
+      >
+        <Image
+          src={LOTTERY_TICKET_IMAGES[entry.ticketType]}
+          alt=""
+          width={Math.round(itemSize * 0.88)}
+          height={Math.round(itemSize * 0.62)}
+          className="backpack-lottery-ticket__image"
+          style={{ width: itemSize * 0.88, height: itemSize * 0.62 }}
+          unoptimized
+        />
+        <span className="backpack-item-slot__count" aria-label={`數量 ${entry.count}`}>
+          {entry.count}
+        </span>
+      </button>
+    );
+  };
+
   return (
     <div className="backpack-page fixed inset-0 overflow-hidden text-[#f5eed8]">
       <div ref={stageRef} className="backpack-stage absolute inset-0">
@@ -161,74 +273,7 @@ export default function BackpackView() {
         {cover ? (
           <>
             <BackpackRedeemButton cover={cover} />
-
-            {gridEntries.map((entry) => {
-              const slot = GRID_SLOTS[entry.slotIndex];
-              if (!slot) return null;
-              const box = slotStyleInCover(slot, cover);
-              const itemSize = Math.min(box.width, box.height) * BACKPACK_ITEM_SIZE_RATIO;
-
-              if (entry.kind === "collectible") {
-                const def = getCollectibleDef(entry.id);
-                if (!def) return null;
-                const isSelected = selectedId === entry.id && !selectedLottery;
-                return (
-                  <button
-                    key={`item-${entry.id}`}
-                    type="button"
-                    className={`backpack-item-slot absolute ${
-                      isSelected ? "backpack-item-slot--selected" : ""
-                    }`}
-                    style={toAbsoluteStyle(box)}
-                    onClick={() => selectCollectible(entry.id)}
-                    aria-label={def.name}
-                  >
-                    <span
-                      className="backpack-item-slot__shadow"
-                      style={{ width: itemSize * 0.72, height: itemSize * 0.14 }}
-                      aria-hidden
-                    />
-                    <Image
-                      src={BACKPACK_ITEM_IMAGES[entry.id] ?? def.icon}
-                      alt=""
-                      width={Math.round(itemSize)}
-                      height={Math.round(itemSize)}
-                      className="backpack-item-slot__icon"
-                      style={{ width: itemSize, height: itemSize }}
-                      unoptimized
-                    />
-                  </button>
-                );
-              }
-
-              const meta = LOTTERY_META[entry.ticketType];
-              const isSelected = selectedLottery === entry.ticketType;
-              return (
-                <button
-                  key={`lottery-${entry.ticketType}`}
-                  type="button"
-                  className={`backpack-item-slot absolute ${
-                    isSelected ? "backpack-item-slot--selected" : ""
-                  }`}
-                  style={toAbsoluteStyle(box)}
-                  onClick={() => selectLottery(entry.ticketType)}
-                  aria-label={meta.name}
-                >
-                  <Image
-                    src={LOTTERY_TICKET_IMAGES[entry.ticketType]}
-                    alt=""
-                    width={Math.round(itemSize * 0.88)}
-                    height={Math.round(itemSize * 0.62)}
-                    className="backpack-lottery-ticket__image"
-                    style={{ width: itemSize * 0.88, height: itemSize * 0.62 }}
-                    unoptimized
-                  />
-                  <span className="backpack-item-slot__count" aria-label={`數量 ${entry.count}`}>
-                    {entry.count}
-                  </span>
-                </button>
-              );
-            })}
+            {gridEntries.map(renderSlot)}
 
             {showCollectibleDetail && selectedDef && imageBox && nameBox && descBox ? (
               <>
@@ -238,10 +283,10 @@ export default function BackpackView() {
                 >
                   <Image
                     src={BACKPACK_ITEM_IMAGES[selectedDef.id] ?? selectedDef.image}
-                    alt={selectedDef.name}
+                    alt={selectedSpecialLocked ? "???" : selectedDef.name}
                     width={Math.round(detailImageMax)}
                     height={Math.round(detailImageMax)}
-                    className="backpack-detail-overlay__image"
+                    className={`backpack-detail-overlay__image ${selectedSpecialLocked ? "backpack-item-slot__icon--silhouette" : ""}`}
                     unoptimized
                   />
                 </div>
@@ -249,13 +294,15 @@ export default function BackpackView() {
                   className="backpack-detail-overlay__name absolute pointer-events-none"
                   style={toAbsoluteStyle(nameBox)}
                 >
-                  {selectedDef.name}
+                  {selectedSpecialLocked ? "???" : selectedDef.name}
                 </p>
                 <p
                   className="backpack-detail-overlay__desc absolute pointer-events-none"
                   style={toAbsoluteStyle(descBox)}
                 >
-                  {getDescription(selectedDef)}
+                  {selectedSpecialLocked
+                    ? lockedSpecialHint(SPECIAL_ITEM_STALL[selectedDef.id]!)
+                    : getDescription(selectedDef)}
                 </p>
               </>
             ) : null}

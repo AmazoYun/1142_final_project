@@ -14,6 +14,8 @@ type Props = {
   worldY: number;
   zIndex: number;
   visible: boolean;
+  /** 取得道具對話／動畫進行中時停用空白鍵與按鈕 */
+  interactionDisabled?: boolean;
   onFadeOutComplete?: () => void;
   onEnterGame: (stallId: StallId) => void;
 };
@@ -31,6 +33,7 @@ export default function StallEnterBar({
   worldY,
   zIndex,
   visible,
+  interactionDisabled = false,
   onFadeOutComplete,
   onEnterGame,
 }: Props) {
@@ -46,7 +49,7 @@ export default function StallEnterBar({
   }, [onEnterGame, playerX, stallId, worldWidth]);
 
   const triggerEnter = useCallback(() => {
-    if (corroding || pendingRef.current || !fadedIn) return;
+    if (interactionDisabled || corroding || pendingRef.current || !fadedIn) return;
     pendingRef.current = true;
     setCorroding(true);
     window.setTimeout(() => {
@@ -54,7 +57,7 @@ export default function StallEnterBar({
       pendingRef.current = false;
       setCorroding(false);
     }, CORRODE_MS);
-  }, [corroding, fadedIn, runEnter]);
+  }, [corroding, fadedIn, interactionDisabled, runEnter]);
 
   useEffect(() => {
     if (visible) {
@@ -77,16 +80,18 @@ export default function StallEnterBar({
   }, [visible, fadedIn, onFadeOutComplete]);
 
   useEffect(() => {
+    if (!visible || interactionDisabled) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.code !== "Space" && e.key !== " ") return;
       if (!fadedIn) return;
       e.preventDefault();
+      e.stopPropagation();
       playUiEnterSound();
       triggerEnter();
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [triggerEnter, fadedIn]);
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [visible, triggerEnter, fadedIn, interactionDisabled]);
 
   if (!mounted) return null;
 
@@ -107,7 +112,7 @@ export default function StallEnterBar({
           className={`stall-enter-btn ${corroding ? "stall-enter-btn--corroding" : ""}`}
           data-ui-sound="enter"
           onClick={triggerEnter}
-          disabled={corroding || !fadedIn}
+          disabled={interactionDisabled || corroding || !fadedIn}
         >
           <span className="stall-enter-btn__mask" aria-hidden>
             {/* eslint-disable-next-line @next/next/no-img-element */}

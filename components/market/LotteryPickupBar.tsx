@@ -7,6 +7,7 @@ import {
   LOTTERY_GROUND_Z_INDEX,
   PICKUP_ABOVE_GROUND_PX,
 } from "@/lib/market/hubLayout";
+import { playGetCoinSound } from "@/lib/market/hubSounds";
 import type { RoadLotterySpawn } from "@/store/tokenStore";
 import { useTokenStore } from "@/store/tokenStore";
 
@@ -36,6 +37,7 @@ export default function LotteryPickupBar({ spawn, worldX, groundY, glowing, visi
 
   const runPickup = useCallback(() => {
     pickupRoadSpawn(spawn.id);
+    playGetCoinSound();
   }, [pickupRoadSpawn, spawn.id]);
 
   const triggerPickup = useCallback(() => {
@@ -67,15 +69,17 @@ export default function LotteryPickupBar({ spawn, worldX, groundY, glowing, visi
   }, [visible, fadedIn]);
 
   useEffect(() => {
+    if (!visible) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.code !== "Space" && e.key !== " ") return;
       if (!fadedIn) return;
       e.preventDefault();
+      e.stopImmediatePropagation();
       triggerPickup();
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [triggerPickup, fadedIn]);
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [visible, triggerPickup, fadedIn]);
 
   return (
     <>
@@ -113,6 +117,7 @@ export default function LotteryPickupBar({ spawn, worldX, groundY, glowing, visi
             <button
               type="button"
               className={`stall-enter-btn ${corroding ? "stall-enter-btn--corroding" : ""}`}
+              data-ui-sound="none"
               onClick={triggerPickup}
               disabled={corroding || !fadedIn}
             >
