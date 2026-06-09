@@ -7,7 +7,7 @@ export const STALL_HOW_TO: Record<StallId, StallHowToSection[]> = {
       title: "得分",
       items: [
         "碰圓形障礙 +5",
-        "通道（左→右）：彈珠+1 ÷2 銅幣 +20 -8 ×2",
+        "通道（左→右）：彈珠+1 ÷2 ??? +20 -8 ×2",
         "集滿蓄力 ×1.2",
       ],
     },
