@@ -47,6 +47,8 @@ type Props = {
   showSkip?: boolean;
   onSkip?: () => void;
   endingId?: EndingId;
+  /** 前導劇情：需點擊畫面後才開始播放 */
+  clickToStart?: boolean;
 };
 
 export default function StorySequencePlayer({
@@ -56,7 +58,9 @@ export default function StorySequencePlayer({
   showSkip = false,
   onSkip,
   endingId,
+  clickToStart = false,
 }: Props) {
+  const [started, setStarted] = useState(() => !clickToStart);
   const [index, setIndex] = useState(0);
   const [transition, setTransition] = useState<StoryLine | null>(null);
   const [visual, setVisual] = useState<StoryLine | null>(null);
@@ -69,7 +73,7 @@ export default function StorySequencePlayer({
   const onCompleteCalledRef = useRef(false);
 
   const line = lines[index];
-  useIntroLineSounds(line, !endingId);
+  useIntroLineSounds(started ? line : undefined, !endingId && started);
 
   const advance = useCallback(() => {
     if (index >= lines.length - 1) {
@@ -83,7 +87,7 @@ export default function StorySequencePlayer({
   }, [index, lines.length, onComplete]);
 
   useEffect(() => {
-    if (!line) return;
+    if (!started || !line) return;
 
     if (line.type === "visual") {
       setVisual(line);
@@ -135,9 +139,10 @@ export default function StorySequencePlayer({
       const t = window.setTimeout(advance, line.ms);
       return () => clearTimeout(t);
     }
-  }, [line, advance]);
+  }, [line, advance, started]);
 
   const canStoryAdvance =
+    started &&
     !isIntroToiletBlocked(line) &&
     (line?.type === "caption" ||
       line?.type === "dialogue" ||
@@ -250,6 +255,21 @@ export default function StorySequencePlayer({
     setTransition(null);
     advance();
   };
+
+  if (clickToStart && !started) {
+    return (
+      <button
+        type="button"
+        className="intro-click-start fixed inset-0 z-[80] flex flex-col items-center justify-center bg-black cursor-default border-0 p-0"
+        onClick={() => setStarted(true)}
+        aria-label="點擊畫面開始前導劇情"
+      >
+        <p className="intro-click-start__hint intro-loading-text text-sm tracking-widest">
+          點擊畫面開始
+        </p>
+      </button>
+    );
+  }
 
   return (
     <div className="fixed inset-0 z-[70] overflow-hidden bg-black">

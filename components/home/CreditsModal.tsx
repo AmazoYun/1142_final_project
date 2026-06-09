@@ -20,6 +20,10 @@ const CREDITS: { role: string; members: string | readonly string[] }[] = [
     members: [
       "主畫面：Silent Hill 2 OST - White Noiz",
       "夜市場景音樂：Yume Nikki OST - Numbers World",
+      "彈珠臺攤位音樂：豬哥亮的歌廳秀",
+      "射氣球攤位音樂：沈文程 - 漂泊七逃人",
+      "套圈圈攤位音樂：阿吉仔 - 命運的吉他",
+      "撈金魚攤位音樂：林強 - 春風少年兄",
     ],
   },
 ];

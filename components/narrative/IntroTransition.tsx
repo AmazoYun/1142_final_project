@@ -92,7 +92,7 @@ export default function IntroTransition({ kind, reveals, overlay = false, onDone
     const toSrc = introSceneSrc(reveals ?? "glowing-stall")!;
     return (
       <div className={`${rootClass} intro-transition--glow bg-black hub-world-bg`} style={rootStyle}>
-        <div className="intro-transition__glow-from intro-transition__image-wrap--glitch">
+        <div className="intro-transition__glow-from">
           <Image
             src={fromSrc}
             alt=""
@@ -102,9 +102,8 @@ export default function IntroTransition({ kind, reveals, overlay = false, onDone
             sizes="100vw"
             priority
           />
-          <IntroTransitionGlitch />
         </div>
-        <div className="intro-transition__glow-to intro-transition__image-wrap--glitch">
+        <div className="intro-transition__glow-to">
           <Image
             src={toSrc}
             alt=""
@@ -114,7 +113,6 @@ export default function IntroTransition({ kind, reveals, overlay = false, onDone
             sizes="100vw"
             priority
           />
-          <IntroTransitionGlitch />
         </div>
         <HubSceneOverlay />
       </div>

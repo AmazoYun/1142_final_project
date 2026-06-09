@@ -40,6 +40,7 @@ export default function IntroFlow({ onComplete }: Props) {
   return (
     <StorySequencePlayer
       lines={narrativeDefault.intro}
+      clickToStart
       showSkip
       onSkip={() => void finishIntro()}
       onAction={(a) => handleAction(a)}
