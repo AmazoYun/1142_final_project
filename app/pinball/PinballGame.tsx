@@ -115,6 +115,8 @@ const LOW_TIER_MAX = 0.34;
 const MID_TIER_MAX = 0.74;
 const HIGH_TIER_MULTIPLIER = 1.2;
 const OBSTACLE_STUCK_MS = 220;
+const OBSTACLE_UNPLAYABLE_MS = 10_000;
+const BONUS_CHANNEL_LANE = 3;
 const MAX_SCORE = 500;
 const OBSTACLE_HIT_POINTS = 5;
 const CHANNEL_BONUS_POINTS = 20;
@@ -148,6 +150,7 @@ export default function PinballGame() {
   const settleTimeoutRef = useRef<number | null>(null);
   const stuckFramesRef = useRef(0);
   const obstacleStuckRef = useRef<{ index: number; since: number; normal: Vec } | null>(null);
+  const gameplayBlockedSinceRef = useRef<number | null>(null);
   const noticeTimeoutRef = useRef<number | null>(null);
   const noticeClearTimeoutRef = useRef<number | null>(null);
   const roundScoreRef = useRef(0);
@@ -345,6 +348,7 @@ export default function PinballGame() {
       sfx.stopPress();
       scoreMultiplierRef.current = 1;
       obstacleStuckRef.current = null;
+      gameplayBlockedSinceRef.current = null;
     };
 
     const spawnNextBall = () => {
@@ -451,26 +455,29 @@ export default function PinballGame() {
       sfx.playBump();
     };
 
-    const applyObstacleStuckEscape = () => {
-      if (!ball.launched || inRailRef.current || runDoneRef.current) {
-        obstacleStuckRef.current = null;
-        return;
-      }
+    const getObstacleTouch = (): { index: number; normal: Vec } | null => {
       const assets = assetsRef.current;
-      if (!assets) return;
+      if (!assets) return null;
 
-      let touch: { index: number; normal: Vec } | null = null;
       for (let i = 0; i < layoutRef.current.obstacles.length; i += 1) {
         const obs = layoutRef.current.obstacles[i];
         const body = assets.bodies[obs.kind];
         const placed = { x: obs.x, y: obs.y, rotation: obs.rotation, scale: obs.scale };
         const hit = isBallTouchingImageBody(ball.pos, ball.radius, body, placed);
         if (hit) {
-          touch = { index: i, normal: hit.normal };
-          break;
+          return { index: i, normal: hit.normal };
         }
       }
+      return null;
+    };
 
+    const applyObstacleStuckEscape = () => {
+      if (!ball.launched || inRailRef.current || runDoneRef.current) {
+        obstacleStuckRef.current = null;
+        return;
+      }
+
+      const touch = getObstacleTouch();
       if (!touch) {
         obstacleStuckRef.current = null;
         return;
@@ -499,6 +506,35 @@ export default function PinballGame() {
         color: "255,100,100",
       });
       sfx.playBump();
+    };
+
+    const checkObstacleHardStuck = () => {
+      if (!ball.launched || inRailRef.current || runDoneRef.current || gameOverRef.current) {
+        gameplayBlockedSinceRef.current = null;
+        return;
+      }
+
+      const touch = getObstacleTouch();
+      const speed = Math.hypot(ball.vel.x, ball.vel.y);
+      const blocked = touch !== null && speed < 0.16 * PHYSICS_SCALE;
+      if (!blocked) {
+        gameplayBlockedSinceRef.current = null;
+        return;
+      }
+
+      const now = performance.now();
+      if (gameplayBlockedSinceRef.current === null) {
+        gameplayBlockedSinceRef.current = now;
+        return;
+      }
+
+      if (now - gameplayBlockedSinceRef.current < OBSTACLE_UNPLAYABLE_MS) return;
+
+      gameplayBlockedSinceRef.current = null;
+      obstacleStuckRef.current = null;
+      stuckFramesRef.current = 0;
+      showRewardNotice("彈珠脫困，送入加分通道");
+      resolveChannel(BONUS_CHANNEL_LANE);
     };
 
     const collideImageObstacles = () => {
@@ -570,8 +606,8 @@ export default function PinballGame() {
       return "×2";
     };
 
-    const resolveChannel = () => {
-      const lane = channelLaneFromX(ball.pos.x);
+    const resolveChannel = (forcedLane?: number) => {
+      const lane = forcedLane ?? channelLaneFromX(ball.pos.x);
       const prevScore = scoreRef.current;
       let bonusGain = 0;
       let gotItem = false;
@@ -764,6 +800,7 @@ export default function PinballGame() {
           collideWalls();
           collideImageObstacles();
           applyObstacleStuckEscape();
+          checkObstacleHardStuck();
           collideLaunchDivider();
           collideSeparators();
           const speed = Math.hypot(ball.vel.x, ball.vel.y);

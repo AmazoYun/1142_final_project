@@ -346,6 +346,10 @@ export default function StartPage() {
         </div>
       </div>
 
+      <p className="start-page__hint">
+        請以電腦瀏覽器進行遊玩，並戴上耳機獲得最佳遊玩體驗。
+      </p>
+
       <LoginModal
         open={homeModal === "login"}
         nickname={nickname}

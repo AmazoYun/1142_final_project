@@ -1322,7 +1322,7 @@ body {
   background: rgba(255, 255, 255, 0.35);
 }
 
-/* 射飛鏢：960×480 互動區 */
+/*射氣球：960×480 互動區 */
 .balloonshoot-stage {
   aspect-ratio: 960 / 480;
   flex: 1 1 auto;
@@ -2907,6 +2907,20 @@ body.game-loading-active {
 
 .start-page__content--leaving {
   opacity: 0;
+  pointer-events: none;
+}
+
+.start-page__hint {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 1rem;
+  z-index: 3;
+  padding: 0 1.25rem;
+  text-align: center;
+  font-size: 0.72rem;
+  line-height: 1.5;
+  letter-spacing: 0.04em;
+  color: rgba(245, 238, 216, 0.58);
   pointer-events: none;
 }
 

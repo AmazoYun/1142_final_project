@@ -73,7 +73,7 @@ export const narrativeDefault: NarrativeBundle = {
   ],
   moveHint: {
     id: "move-hint",
-    text: "電腦版請按左右鍵移動",
+    text: "請按鍵盤左右鍵移動",
   },
   boundaryLines: [
     { id: "bnd-d1", speaker: "主角", text: "後面好像過不去了" },
@@ -102,7 +102,7 @@ export const narrativeDefault: NarrativeBundle = {
     },
     balloonshoot: {
       stallId: "balloonshoot",
-      title: "射飛鏢",
+      title: "射氣球",
       href: "/balloonshoot",
       glow: true,
       captions: [

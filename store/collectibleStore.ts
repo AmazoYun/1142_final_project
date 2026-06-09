@@ -180,6 +180,8 @@ export const useCollectibleStore = create<CollectibleStore>((set, get) => ({
     const p = loadPersisted();
     persistAndSync({ ...p, acquired });
 
+    usePlayerStore.getState().snapshotActiveSave();
+
     return { success: true, itemId: id };
   },
 

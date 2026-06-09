@@ -32,11 +32,20 @@ function bColorAllPopped(
   return group.length > 0 && group.every((b) => !b.alive);
 }
 
+function centerBColorPoppedCount(
+  balloons: BalloonRewardLike[],
+  color: BalloonColor,
+): number {
+  return balloons.filter(
+    (b) => b.zone === "center" && b.area === "B" && b.color === color && !b.alive,
+  ).length;
+}
+
 /**
- * 射飛鏢進階道具條件（須先開啟進階模式）：
- * 1. 左、右環形氣球（A 區）全破
- * 2. 左、右 B 區各破 targetColors 指定的 4 種顏色（左右顏色相同）
- * 3. 中區環形氣球（A 區）全破，且中區 B 區同樣破掉這 4 種顏色
+ * 射氣球進階道具（須先開啟進階模式）：
+ * 1. 左、中、右旋轉環（A 區）全破
+ * 2. 左、右 B 區的 4 種目標色全破（進階開始時自動清除）
+ * 3. 中區 B 區：每種目標色恰好破一顆（破兩顆同色即無法達成）
  */
 export function balloonAdvancedRewardEligible(
   balloons: BalloonRewardLike[],
@@ -52,7 +61,12 @@ export function balloonAdvancedRewardEligible(
   for (const color of targetColors) {
     if (!bColorAllPopped(balloons, "left", color)) return false;
     if (!bColorAllPopped(balloons, "right", color)) return false;
-    if (!bColorAllPopped(balloons, "center", color)) return false;
+
+    const existsInCenter = balloons.some(
+      (b) => b.zone === "center" && b.area === "B" && b.color === color,
+    );
+    if (!existsInCenter) return false;
+    if (centerBColorPoppedCount(balloons, color) !== 1) return false;
   }
 
   return true;

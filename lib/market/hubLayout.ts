@@ -26,7 +26,7 @@ export const INTERACTIVE_ORDER: {
   image: string;
 }[] = [
   { id: "pinball", label: "彈珠台", image: "/final_pic/main_stall/gumball.webp" },
-  { id: "balloonshoot", label: "射飛鏢", image: "/final_pic/main_stall/balloon.webp" },
+  { id: "balloonshoot", label: "射氣球", image: "/final_pic/main_stall/balloon.webp" },
   { id: "ringtoss", label: "套圈圈", image: "/final_pic/main_stall/circle.webp" },
   { id: "catchfish", label: "撈金魚", image: "/final_pic/main_stall/goldfish.webp" },
 ];

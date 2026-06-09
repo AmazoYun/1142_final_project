@@ -402,13 +402,15 @@ export default function BalloonShootGame() {
   const router = useRouter();
   const tokens = useTokenStore((s) => s.tokens);
   const hydrateCollectibles = useCollectibleStore((s) => s.hydrate);
-  const hasFortuneYi = useCollectibleStore((s) => s.hasAcquired("fortune-slip-yi"));
-  const hasBalloonReward = useCollectibleStore((s) => s.hasAcquired(STALL_REWARD.balloonshoot));
+  const collectiblesHydrated = useCollectibleStore((s) => s.hydrated);
+  const acquired = useCollectibleStore((s) => s.acquired);
+  const hasFortuneYi = acquired.includes("fortune-slip-yi");
+  const hasBalloonReward = acquired.includes(STALL_REWARD.balloonshoot);
   const { setRoundActive } = useGameRoundActive();
 
   useEffect(() => {
-    hydrateCollectibles();
-  }, [hydrateCollectibles]);
+    if (!collectiblesHydrated) hydrateCollectibles();
+  }, [collectiblesHydrated, hydrateCollectibles]);
 
   useEffect(() => {
     setRoundActive(!gameOver);
@@ -501,8 +503,10 @@ export default function BalloonShootGame() {
 
   const startAdvancedMode = useCallback(() => {
     if (advancedModeRef.current || gameOverRef.current) return;
-    if (!hasFortuneYi) return;
-    if (hasBalloonReward) return;
+
+    const owned = useCollectibleStore.getState().acquired;
+    if (!owned.includes("fortune-slip-yi")) return;
+    if (owned.includes(STALL_REWARD.balloonshoot)) return;
 
     const colors = [...BALLOON_COLORS];
     for (let i = colors.length - 1; i > 0; i -= 1) {
@@ -521,7 +525,7 @@ export default function BalloonShootGame() {
       performance.now(),
       popBalloonRef.current,
     );
-  }, [hasBalloonReward, hasFortuneYi]);
+  }, []);
 
   const getCanvasPoint = useCallback((clientX: number, clientY: number) => {
     const canvas = canvasRef.current;

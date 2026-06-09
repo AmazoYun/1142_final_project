@@ -3,6 +3,7 @@
 import { INITIAL_TOKENS } from "@/lib/economy/constants";
 import type { CollectibleId } from "@/lib/collectibles/types";
 import type { StallId } from "@/lib/narrative/types";
+import { purgeCollectedCharmSpawns } from "@/lib/collectibles/spawnFortuneSlip";
 import { useCollectibleStore } from "@/store/collectibleStore";
 import { useNarrativeStore } from "@/store/narrativeStore";
 import type { RoadLotterySpawn } from "@/store/tokenStore";
@@ -153,6 +154,7 @@ export function restoreGameSnapshot(snapshot: GameSnapshot) {
   useNarrativeStore.getState().hydrate();
   useCollectibleStore.getState().hydrate();
   useTokenStore.getState().hydrate();
+  purgeCollectedCharmSpawns();
   if (keepIntroDone) {
     useNarrativeStore.getState().completeIntro();
   }

@@ -56,6 +56,7 @@ import {
   saveHubPlayerPosition,
 } from "@/lib/market/hubPlayerPosition";
 import { createHubSoundFx, stopHubBgm, type HubSoundFx } from "@/lib/market/hubSounds";
+import { purgeCollectedCharmSpawns } from "@/lib/collectibles/spawnFortuneSlip";
 import { resolveCharmWorldPositions } from "@/lib/market/charmSpawnPlacement";
 import { loadLotteryFrontMask } from "@/lib/market/lotteryFrontMask";
 import { preloadHubSceneAssets, isHubScenePreloaded } from "@/lib/market/hubAssetPreload";
@@ -104,7 +105,7 @@ export default function NightMarketHub() {
   const playedStalls = useNarrativeStore((s) => s.playedStalls);
   const pointCardSpawnStall = useNarrativeStore((s) => s.pointCardSpawnStall);
   const ensurePointCardSpawn = useNarrativeStore((s) => s.ensurePointCardSpawn);
-  const hasPointCard = useCollectibleStore((s) => s.hasAcquired("point-card"));
+  const hasPointCard = useCollectibleStore((s) => s.acquired.includes("point-card"));
   const hydrateCollectibles = useCollectibleStore((s) => s.hydrate);
   const collectiblesHydrated = useCollectibleStore((s) => s.hydrated);
   const getText = useNarrativeStore((s) => s.getText);
@@ -168,6 +169,7 @@ export default function NightMarketHub() {
   const [shadowEditorStatus, setShadowEditorStatus] = useState<string | null>(null);
   const [shadowSaving, setShadowSaving] = useState(false);
   const [charmWorldX, setCharmWorldX] = useState<Record<string, number>>({});
+  const [charmLayoutResolved, setCharmLayoutResolved] = useState(true);
 
   const updatePlayerAnim = useCallback(
     (facing: "left" | "right", walking: boolean) => {
@@ -338,10 +340,7 @@ export default function NightMarketHub() {
     setOpening(false);
   }, [hydrated, hubAssetsReady, marketOpeningDone]);
 
-  const charmLayoutReady = useMemo(() => {
-    if (charmSpawns.length === 0) return true;
-    return charmSpawns.every((spawn) => charmWorldX[spawn.id] != null);
-  }, [charmSpawns, charmWorldX]);
+  const charmLayoutReady = charmLayoutResolved;
 
   const hubSceneReady =
     hubAssetsReady &&
@@ -547,15 +546,25 @@ export default function NightMarketHub() {
   }, [tokensHydrated, roadSpawns, computeLotteryGroundPos, playerX]);
 
   useEffect(() => {
+    if (!hydrated || !collectiblesHydrated) return;
+    purgeCollectedCharmSpawns();
+  }, [hydrated, collectiblesHydrated]);
+
+  useEffect(() => {
     if (!hydrated || charmSpawns.length === 0) {
       setCharmWorldX({});
+      setCharmLayoutResolved(true);
       return;
     }
 
     let cancelled = false;
+    setCharmLayoutResolved(false);
     void resolveCharmWorldPositions(charmSpawns, metrics, shadowPlacements).then(
       (positions) => {
-        if (!cancelled) setCharmWorldX(positions);
+        if (!cancelled) {
+          setCharmWorldX(positions);
+          setCharmLayoutResolved(true);
+        }
       },
     );
 

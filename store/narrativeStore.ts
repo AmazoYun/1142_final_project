@@ -1,6 +1,7 @@
 "use client";
 
 import { usePlayerStore } from "@/store/playerStore";
+import { useCollectibleStore } from "@/store/collectibleStore";
 import { create } from "zustand";
 import { narrativeDefault } from "@/data/narrative-default";
 import type { CollectibleId } from "@/lib/collectibles/types";
@@ -178,6 +179,16 @@ export const useNarrativeStore = create<NarrativeStore>((set, get) => ({
 
   hydrate: () => {
     const p = loadPersisted();
+    let charmSpawns = p.charmSpawns;
+
+    const collectible = useCollectibleStore.getState();
+    if (!collectible.hydrated) collectible.hydrate();
+    const pruned = charmSpawns.filter((spawn) => !collectible.acquired.includes(spawn.itemId));
+    if (pruned.length !== charmSpawns.length) {
+      charmSpawns = pruned;
+      savePersisted({ ...p, charmSpawns });
+    }
+
     set({
       hydrated: true,
       introDone: p.introDone,
@@ -188,7 +199,7 @@ export const useNarrativeStore = create<NarrativeStore>((set, get) => ({
       completedStalls: p.completedStalls,
       playedStalls: p.playedStalls,
       pointCardSpawnStall: p.pointCardSpawnStall,
-      charmSpawns: p.charmSpawns,
+      charmSpawns,
       marketOpeningDone: p.marketOpeningDone,
       boundaryIndex: p.boundaryIndex,
       seenEndingId: p.seenEndingId,
