@@ -14,28 +14,38 @@ type Layer = {
 type Props = {
   endingId: EndingId;
   slide: number;
+  visualKey: string;
   crossfadeMs?: number;
 };
 
 export default function EndingSceneBackdrop({
   endingId,
   slide,
-  crossfadeMs = 1200,
+  visualKey,
+  crossfadeMs = 2000,
 }: Props) {
   const [layers, setLayers] = useState<Layer[]>([]);
-  const prevSlideRef = useRef<number | null>(null);
+  const prevKeyRef = useRef<string | null>(null);
+  const prevSrcRef = useRef<string | null>(null);
 
   useEffect(() => {
+    if (!visualKey) return;
+
     const src = endingSlideSrc(endingId, slide);
     if (!src) return;
 
-    const prev = prevSlideRef.current;
-    prevSlideRef.current = slide;
-    if (prev === slide) return;
+    const prevKey = prevKeyRef.current;
+    prevKeyRef.current = visualKey;
+    if (prevKey === visualKey) return;
+
+    if (prevSrcRef.current === src) {
+      return;
+    }
+    prevSrcRef.current = src;
 
     setLayers((current) => [
       ...current.map((layer) => ({ ...layer, opacity: 0 })),
-      { key: `${endingId}-${slide}-${Date.now()}`, src, opacity: 0 },
+      { key: visualKey, src, opacity: 0 },
     ]);
 
     const fadeIn = requestAnimationFrame(() => {
@@ -57,28 +67,14 @@ export default function EndingSceneBackdrop({
       cancelAnimationFrame(fadeIn);
       clearTimeout(cleanup);
     };
-  }, [endingId, slide, crossfadeMs]);
+  }, [endingId, slide, visualKey, crossfadeMs]);
 
-  const src = endingSlideSrc(endingId, slide);
-  if (!src) {
+  if (!visualKey) {
     return <div className="absolute inset-0 bg-black" />;
   }
 
   if (layers.length === 0) {
-    return (
-      <div className="intro-scene-backdrop">
-        <div className="intro-scene-backdrop__layer intro-scene-backdrop__layer--in">
-          <Image
-            src={src}
-            alt=""
-            fill
-            priority
-            className="object-cover object-center"
-            sizes="100vw"
-          />
-        </div>
-      </div>
-    );
+    return <div className="absolute inset-0 bg-black" />;
   }
 
   return (
@@ -96,6 +92,7 @@ export default function EndingSceneBackdrop({
             src={layer.src}
             alt=""
             fill
+            priority
             className="object-cover object-center"
             sizes="100vw"
           />

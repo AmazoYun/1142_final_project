@@ -120,6 +120,9 @@ function parseSnapshot(raw: unknown): SaveRecord["snapshot"] | undefined {
     marketOpeningDone: raw.marketOpeningDone === true,
     boundaryIndex: typeof raw.boundaryIndex === "number" ? raw.boundaryIndex : 0,
     seenEndingId: typeof raw.seenEndingId === "string" ? raw.seenEndingId : null,
+    seenEndingIds: Array.isArray(raw.seenEndingIds)
+      ? raw.seenEndingIds.filter((id): id is string => typeof id === "string")
+      : [],
     acquired,
     tokens: typeof raw.tokens === "number" ? raw.tokens : 0,
     ticket10: typeof raw.ticket10 === "number" ? raw.ticket10 : 0,
@@ -150,7 +153,7 @@ function parseSaveRecord(raw: unknown, nickname: string): SaveRecord | null {
     nickname: saveNickname,
     playHistory,
     gameScores: gameScores && Object.keys(gameScores).length > 0 ? gameScores : undefined,
-    scorePenalty: typeof raw.scorePenalty === "number" ? Math.max(0, raw.scorePenalty) : 0,
+    scorePenalty: typeof raw.scorePenalty === "number" && Number.isFinite(raw.scorePenalty) ? raw.scorePenalty : 0,
     totalScore: typeof raw.totalScore === "number" ? raw.totalScore : 0,
     endingId,
     isActive: raw.isActive === true,

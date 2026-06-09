@@ -20,7 +20,7 @@ import IntroTransition from "./IntroTransition";
 import TransitionSplash from "./TransitionSplash";
 
 const DEFAULT_VISUAL_PAUSE_MS = 1200;
-const ENDING_VISUAL_PAUSE_MS = 400;
+const ENDING_CROSSFADE_MS = 2000;
 
 const INTRO_OVERLAY_TRANSITIONS = new Set([
   "flash-transition",
@@ -62,6 +62,7 @@ export default function StorySequencePlayer({
   const [visual, setVisual] = useState<StoryLine | null>(null);
   const [backdropEffect, setBackdropEffect] = useState<BackdropEffect>("none");
   const [endingSlide, setEndingSlide] = useState(0);
+  const [endingVisualKey, setEndingVisualKey] = useState("");
   const [buttonBusy, setButtonBusy] = useState(false);
   const [backdropInstantSwap, setBackdropInstantSwap] = useState(false);
   const [holdBlackScreen, setHoldBlackScreen] = useState(false);
@@ -93,7 +94,8 @@ export default function StorySequencePlayer({
 
     if (line.type === "ending-visual") {
       setEndingSlide(line.slide);
-      const t = window.setTimeout(advance, ENDING_VISUAL_PAUSE_MS);
+      setEndingVisualKey(line.id);
+      const t = window.setTimeout(advance, ENDING_CROSSFADE_MS);
       return () => clearTimeout(t);
     }
 
@@ -139,8 +141,7 @@ export default function StorySequencePlayer({
     !isIntroToiletBlocked(line) &&
     (line?.type === "caption" ||
       line?.type === "dialogue" ||
-      line?.type === "visual" ||
-      line?.type === "ending-visual");
+      line?.type === "visual");
   useStoryAdvance(canStoryAdvance ? advance : undefined, Boolean(canStoryAdvance));
 
   if (!line) return null;
@@ -267,7 +268,12 @@ export default function StorySequencePlayer({
         {hideBackdrop ? (
           <div className="absolute inset-0 bg-black" aria-hidden />
         ) : endingId ? (
-          <EndingSceneBackdrop endingId={endingId} slide={endingSlide} />
+          <EndingSceneBackdrop
+            endingId={endingId}
+            slide={endingSlide}
+            visualKey={endingVisualKey}
+            crossfadeMs={ENDING_CROSSFADE_MS}
+          />
         ) : (
           <FirstPersonView
             visual={currentVisual}

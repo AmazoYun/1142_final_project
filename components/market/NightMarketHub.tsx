@@ -1,8 +1,6 @@
 "use client";
 
 import {
-  lazy,
-  Suspense,
   useCallback,
   useEffect,
   useMemo,
@@ -33,8 +31,8 @@ import {
   type HubShadowPlacement,
 } from "@/lib/market/hubShadowLayout";
 
-const HubStallLayers = lazy(() => import("./HubStallLayers"));
-const HubFrontLayers = lazy(() => import("./HubFrontLayers"));
+import HubStallLayers from "./HubStallLayers";
+import HubFrontLayers from "./HubFrontLayers";
 import {
   clampCameraOffset,
   ENTER_BAR_Z_INDEX,
@@ -60,6 +58,7 @@ import {
 import { createHubSoundFx, stopHubBgm, type HubSoundFx } from "@/lib/market/hubSounds";
 import { resolveCharmWorldPositions } from "@/lib/market/charmSpawnPlacement";
 import { loadLotteryFrontMask } from "@/lib/market/lotteryFrontMask";
+import { preloadHubSceneAssets, isHubScenePreloaded } from "@/lib/market/hubAssetPreload";
 import type { StallId } from "@/lib/narrative/types";
 import { useStoryAdvance } from "@/lib/useStoryAdvance";
 import { navigateWithFade } from "@/lib/navigation/navigateWithFade";
@@ -139,6 +138,10 @@ export default function NightMarketHub() {
   const [playerX, setPlayerX] = useState(initialSpawnX);
   const [opening, setOpening] = useState(false);
   const [openingIndex, setOpeningIndex] = useState(0);
+  const [hubAssetsReady, setHubAssetsReady] = useState(isHubScenePreloaded);
+  const [lotteryMaskReady, setLotteryMaskReady] = useState(false);
+  const [shadowLayoutReady, setShadowLayoutReady] = useState(false);
+  const [hubLayoutPainted, setHubLayoutPainted] = useState(false);
   const [moveHintVisible, setMoveHintVisible] = useState(true);
   const [storyStallId, setStoryStallId] = useState<StallId | null>(null);
   const [howToStallId, setHowToStallId] = useState<StallId | null>(null);
@@ -184,6 +187,7 @@ export default function NightMarketHub() {
   );
 
   const movementLocked =
+    !marketOpeningDone ||
     opening ||
     storyStallId !== null ||
     howToStallId !== null ||
@@ -239,14 +243,22 @@ export default function NightMarketHub() {
   }, [hydrate, hydrateCollectibles, hydrateTokens]);
 
   useEffect(() => {
-    void loadLotteryFrontMask(metrics);
+    let cancelled = false;
+    setLotteryMaskReady(false);
+    void loadLotteryFrontMask(metrics).then(() => {
+      if (!cancelled) setLotteryMaskReady(true);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [metrics]);
 
   useEffect(() => {
     fetch("/api/hub-shadow-layout")
       .then((r) => r.json())
       .then((data) => setShadowPlacements(normalizeShadowPlacements(data)))
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setShadowLayoutReady(true));
   }, []);
 
   useEffect(() => {
@@ -310,9 +322,59 @@ export default function NightMarketHub() {
   }, [playerX, hubLayout, metrics]);
 
   useEffect(() => {
-    if (!hydrated) return;
-    setOpening(!marketOpeningDone);
-  }, [hydrated, marketOpeningDone]);
+    if (hubAssetsReady) return;
+    let cancelled = false;
+    void preloadHubSceneAssets().then(() => {
+      if (!cancelled) setHubAssetsReady(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [hubAssetsReady]);
+
+  useEffect(() => {
+    if (!hydrated || !hubAssetsReady) return;
+    if (!marketOpeningDone) return;
+    setOpening(false);
+  }, [hydrated, hubAssetsReady, marketOpeningDone]);
+
+  const charmLayoutReady = useMemo(() => {
+    if (charmSpawns.length === 0) return true;
+    return charmSpawns.every((spawn) => charmWorldX[spawn.id] != null);
+  }, [charmSpawns, charmWorldX]);
+
+  const hubSceneReady =
+    hubAssetsReady &&
+    hydrated &&
+    tokensHydrated &&
+    collectiblesHydrated &&
+    lotteryMaskReady &&
+    shadowLayoutReady &&
+    charmLayoutReady &&
+    sceneSize.width > 0 &&
+    sceneSize.height > 0;
+
+  useEffect(() => {
+    if (!hubSceneReady) {
+      setHubLayoutPainted(false);
+      return;
+    }
+    let cancelled = false;
+    const frame = window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        if (!cancelled) setHubLayoutPainted(true);
+      });
+    });
+    return () => {
+      cancelled = true;
+      window.cancelAnimationFrame(frame);
+    };
+  }, [hubSceneReady]);
+
+  useEffect(() => {
+    if (!hubLayoutPainted || marketOpeningDone) return;
+    setOpening(true);
+  }, [hubLayoutPainted, marketOpeningDone]);
 
   useEffect(() => {
     const onDown = (e: KeyboardEvent) => {
@@ -613,6 +675,9 @@ export default function NightMarketHub() {
     "--player-floor": PLAYER_FLOOR_RATIO,
   } as CSSProperties;
 
+  const hubSceneVisible = hubSceneReady;
+  const showHubChrome = hubSceneVisible && marketOpeningDone;
+
   const goHome = useCallback(async () => {
     await usePlayerStore.getState().flushActiveSaveToCloud();
     stopHubBgm();
@@ -621,7 +686,7 @@ export default function NightMarketHub() {
 
   return (
     <div className="hub-shell h-screen flex flex-col overflow-hidden">
-      {!opening ? (
+      {showHubChrome ? (
         <header className="game-header shrink-0 flex items-center justify-between px-4 py-2">
           <button
             type="button"
@@ -646,7 +711,9 @@ export default function NightMarketHub() {
       ) : null}
 
       <div ref={playRef} className="relative min-h-0 flex-1 overflow-hidden" style={sceneStyle}>
-        {!opening ? (
+        {!hubSceneReady ? <div className="absolute inset-0 bg-black" aria-hidden /> : null}
+
+        {hubSceneVisible ? (
           <>
             <div
               className="absolute top-0 left-0 h-full will-change-transform"
@@ -674,15 +741,13 @@ export default function NightMarketHub() {
             />
           </div>
 
-          <Suspense fallback={null}>
-            <HubStallLayers
-              hubLayout={hubLayout}
-              metrics={metrics}
-              playerX={playerX}
-              pointCardStallId={pointCardStallId}
-              pointCardNear={pointCardNear}
-            />
-          </Suspense>
+          <HubStallLayers
+            hubLayout={hubLayout}
+            metrics={metrics}
+            playerX={playerX}
+            pointCardStallId={pointCardStallId}
+            pointCardNear={pointCardNear}
+          />
 
           {tokensHydrated
             ? roadSpawns.map((spawn) => {
@@ -741,19 +806,18 @@ export default function NightMarketHub() {
             className="hub-player-slot"
             style={{ left: playerX, zIndex: PLAYER_Z_INDEX }}
           >
+            <div className="hub-player-marker" aria-hidden />
             <HubPlayer facing={playerAnim.facing} walking={playerAnim.walking} />
           </div>
 
-          <Suspense fallback={null}>
-            <HubFrontLayers
-              metrics={metrics}
-              shadowPlacements={shadowPlacements}
-              shadowEditMode={shadowEditMode}
-              selectedShadowId={selectedShadowId}
-              onSelectShadow={setSelectedShadowId}
-              onShadowPlacementsChange={setShadowPlacements}
-            />
-          </Suspense>
+          <HubFrontLayers
+            metrics={metrics}
+            shadowPlacements={shadowPlacements}
+            shadowEditMode={shadowEditMode}
+            selectedShadowId={selectedShadowId}
+            onSelectShadow={setSelectedShadowId}
+            onShadowPlacementsChange={setShadowPlacements}
+          />
 
           {enterBarStallId && displayedEnterBarPos && !groundPickupActive && (
             <StallEnterBar
@@ -891,16 +955,8 @@ export default function NightMarketHub() {
           </>
         ) : null}
 
-        {opening && openingLine ? (
-          <div className="absolute inset-0 z-50 overflow-hidden cursor-default">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={HUB_BACKGROUND}
-              alt=""
-              className="absolute inset-0 h-full w-full object-cover object-center"
-              decoding="async"
-              draggable={false}
-            />
+        {hubSceneVisible && opening && openingLine ? (
+          <div className="absolute inset-0 z-50 overflow-hidden cursor-default pointer-events-auto">
             <div className="hub-vignette" aria-hidden />
             <button
               type="button"

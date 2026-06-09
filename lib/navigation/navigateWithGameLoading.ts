@@ -6,7 +6,7 @@ import { preloadForGameLoading } from "@/lib/navigation/gameLoadingPreload";
 import { useGameLoadingStore } from "@/store/gameLoadingStore";
 import { useTransitionStore } from "@/store/transitionStore";
 
-export const GAME_LOADING_MIN_MS = 2000;
+export const GAME_LOADING_MIN_MS = 3500;
 
 export async function navigateWithGameLoading(
   router: AppRouterInstance,

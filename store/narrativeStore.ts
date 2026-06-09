@@ -4,6 +4,7 @@ import { usePlayerStore } from "@/store/playerStore";
 import { create } from "zustand";
 import { narrativeDefault } from "@/data/narrative-default";
 import type { CollectibleId } from "@/lib/collectibles/types";
+import type { EndingId } from "@/lib/endings/types";
 import type { NarrativeBundle, StallId } from "@/lib/narrative/types";
 
 const STORAGE_KEY = "night-market-narrative-v1";
@@ -29,44 +30,58 @@ type Persisted = {
   marketOpeningDone: boolean;
   boundaryIndex: number;
   seenEndingId: string | null;
+  seenEndingIds?: EndingId[];
+  directLeavePenaltyApplied?: boolean;
 };
+
+function normalizeSeenEndingIds(parsed: Partial<Persisted>): EndingId[] {
+  if (Array.isArray(parsed.seenEndingIds)) {
+    return parsed.seenEndingIds.filter(
+      (id): id is EndingId =>
+        id === "basic" || id === "loop" || id === "stuck" || id === "true",
+    );
+  }
+  if (
+    parsed.seenEndingId === "basic" ||
+    parsed.seenEndingId === "loop" ||
+    parsed.seenEndingId === "stuck" ||
+    parsed.seenEndingId === "true"
+  ) {
+    return [parsed.seenEndingId];
+  }
+  return [];
+}
+
+function emptyPersisted(): Persisted {
+  return {
+    introDone: false,
+    pendingDirectLeavePenalty: false,
+    editMode: false,
+    overrides: {},
+    visitedStalls: [],
+    completedStalls: [],
+    playedStalls: [],
+    pointCardSpawnStall: null,
+    charmSpawns: [],
+    marketOpeningDone: false,
+    boundaryIndex: 0,
+    seenEndingId: null,
+    seenEndingIds: [],
+    directLeavePenaltyApplied: false,
+  };
+}
 
 function loadPersisted(): Persisted {
   if (typeof window === "undefined") {
-    return {
-      introDone: false,
-      pendingDirectLeavePenalty: false,
-      editMode: false,
-      overrides: {},
-      visitedStalls: [],
-      completedStalls: [],
-      playedStalls: [],
-      pointCardSpawnStall: null,
-      charmSpawns: [],
-      marketOpeningDone: false,
-      boundaryIndex: 0,
-      seenEndingId: null,
-    };
+    return emptyPersisted();
   }
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) {
-      return {
-        introDone: false,
-        pendingDirectLeavePenalty: false,
-        editMode: false,
-        overrides: {},
-        visitedStalls: [],
-        completedStalls: [],
-        playedStalls: [],
-        pointCardSpawnStall: null,
-        charmSpawns: [],
-        marketOpeningDone: false,
-        boundaryIndex: 0,
-        seenEndingId: null,
-      };
+      return emptyPersisted();
     }
-    const parsed = JSON.parse(raw) as Persisted;
+    const parsed = JSON.parse(raw) as Partial<Persisted>;
+    const seenEndingIds = normalizeSeenEndingIds(parsed);
     return {
       introDone: parsed.introDone ?? false,
       pendingDirectLeavePenalty: parsed.pendingDirectLeavePenalty ?? false,
@@ -83,23 +98,12 @@ function loadPersisted(): Persisted {
       })),
       marketOpeningDone: parsed.marketOpeningDone ?? false,
       boundaryIndex: parsed.boundaryIndex ?? 0,
-      seenEndingId: parsed.seenEndingId ?? null,
+      seenEndingId: parsed.seenEndingId ?? seenEndingIds.at(-1) ?? null,
+      seenEndingIds,
+      directLeavePenaltyApplied: parsed.directLeavePenaltyApplied ?? false,
     };
   } catch {
-    return {
-      introDone: false,
-      pendingDirectLeavePenalty: false,
-      editMode: false,
-      overrides: {},
-      visitedStalls: [],
-      completedStalls: [],
-      playedStalls: [],
-      pointCardSpawnStall: null,
-      charmSpawns: [],
-      marketOpeningDone: false,
-      boundaryIndex: 0,
-      seenEndingId: null,
-    };
+    return emptyPersisted();
   }
 }
 
@@ -127,6 +131,8 @@ type NarrativeStore = {
   marketOpeningDone: boolean;
   boundaryIndex: number;
   seenEndingId: string | null;
+  seenEndingIds: EndingId[];
+  directLeavePenaltyApplied: boolean;
   pendingDirectLeavePenalty: boolean;
   hydrate: () => void;
   setOverride: (id: string, text: string) => void;
@@ -146,6 +152,7 @@ type NarrativeStore = {
   completeMarketOpening: () => void;
   nextBoundaryLine: () => string | null;
   markEndingSeen: (id: string) => void;
+  markDirectLeavePenaltyApplied: () => void;
   markPendingDirectLeavePenalty: () => void;
   consumePendingDirectLeavePenalty: () => boolean;
   resetAll: () => void;
@@ -165,6 +172,8 @@ export const useNarrativeStore = create<NarrativeStore>((set, get) => ({
   marketOpeningDone: false,
   boundaryIndex: 0,
   seenEndingId: null,
+  seenEndingIds: [],
+  directLeavePenaltyApplied: false,
   pendingDirectLeavePenalty: false,
 
   hydrate: () => {
@@ -183,6 +192,8 @@ export const useNarrativeStore = create<NarrativeStore>((set, get) => ({
       marketOpeningDone: p.marketOpeningDone,
       boundaryIndex: p.boundaryIndex,
       seenEndingId: p.seenEndingId,
+      seenEndingIds: p.seenEndingIds,
+      directLeavePenaltyApplied: p.directLeavePenaltyApplied ?? false,
     });
   },
 
@@ -290,9 +301,22 @@ export const useNarrativeStore = create<NarrativeStore>((set, get) => ({
   },
 
   markEndingSeen: (id) => {
-    set({ seenEndingId: id });
+    const endingId = id as EndingId;
+    const prev = get().seenEndingIds;
+    const seenEndingIds = prev.includes(endingId) ? prev : [...prev, endingId];
+    set({ seenEndingId: id, seenEndingIds });
     const p = loadPersisted();
-    persistAndSync({ ...p, seenEndingId: id });
+    persistAndSync({ ...p, seenEndingId: id, seenEndingIds });
+  },
+
+  markDirectLeavePenaltyApplied: () => {
+    set({ directLeavePenaltyApplied: true, pendingDirectLeavePenalty: false });
+    const p = loadPersisted();
+    persistAndSync({
+      ...p,
+      directLeavePenaltyApplied: true,
+      pendingDirectLeavePenalty: false,
+    });
   },
 
   markPendingDirectLeavePenalty: () => {
@@ -324,6 +348,8 @@ export const useNarrativeStore = create<NarrativeStore>((set, get) => ({
       marketOpeningDone: false,
       boundaryIndex: 0,
       seenEndingId: null,
+      seenEndingIds: [],
+      directLeavePenaltyApplied: false,
     };
     savePersisted(fresh);
     set({
@@ -337,6 +363,8 @@ export const useNarrativeStore = create<NarrativeStore>((set, get) => ({
       marketOpeningDone: false,
       boundaryIndex: 0,
       seenEndingId: null,
+      seenEndingIds: [],
+      directLeavePenaltyApplied: false,
     });
     usePlayerStore.getState().scheduleCloudSnapshot();
   },

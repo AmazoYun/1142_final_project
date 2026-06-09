@@ -1,5 +1,5 @@
 import { introSceneSrc } from "@/lib/narrative/introAssets";
-import { HUB_BACKGROUND } from "@/lib/market/hubLayout";
+import { preloadHubSceneAssets } from "@/lib/market/hubAssetPreload";
 import { normalizeRoutePath } from "@/lib/navigation/gameLoadingRoutes";
 
 function preloadImage(src: string): Promise<void> {
@@ -26,8 +26,7 @@ function preloadAudio(src: string): Promise<void> {
 async function preloadHubAssets(): Promise<void> {
   await Promise.allSettled([
     preloadAudio("/sfx/hub/BGM.mp3"),
-    preloadImage("/character/character_standstill.webp"),
-    preloadImage(HUB_BACKGROUND),
+    preloadHubSceneAssets(),
   ]);
 }
 

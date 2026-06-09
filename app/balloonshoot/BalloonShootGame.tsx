@@ -481,34 +481,17 @@ export default function BalloonShootGame() {
 
   const popBalloon = useCallback(
     (b: Balloon, now: number, options?: { silent?: boolean }) => {
-      const chainPop =
-        !options?.silent &&
-        advancedModeRef.current &&
-        b.area === "B" &&
-        advancedTargetColorsRef.current.includes(b.color);
+      if (!b.alive) return;
 
-      const targets = chainPop
-        ? balloonsRef.current.filter(
-            (balloon) =>
-              balloon.alive &&
-              balloon.area === "B" &&
-              balloon.color === b.color,
-          )
-        : [b];
+      b.alive = false;
+      b.popStart = now;
+      if (options?.silent) return;
 
-      for (const balloon of targets) {
-        balloon.alive = false;
-        balloon.popStart = now;
-        if (options?.silent) continue;
-        addScore(ZONE_HIT_SCORE[balloon.zone]);
-        if (balloon.area === "A") {
-          tryScoreAZone(balloon.zone);
-        }
+      addScore(ZONE_HIT_SCORE[b.zone]);
+      if (b.area === "A") {
+        tryScoreAZone(b.zone);
       }
-
-      if (!options?.silent) {
-        tryAwardBalloonReward();
-      }
+      tryAwardBalloonReward();
     },
     [addScore, tryAwardBalloonReward, tryScoreAZone],
   );

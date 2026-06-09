@@ -1070,14 +1070,16 @@ function CatchFishGameInner() {
         ? Math.sin(netBreak.progress * Math.PI * 16) * (1 - netBreak.progress) * 12
         : 0;
 
-      drawNetSprite(
-        ctx,
-        assetsRef.current,
-        netRef.current.x,
-        netRef.current.y,
-        GAME_PARAMS.catchRadius,
-        { shakeX },
-      );
+      if (!throwBackSequenceRef.current) {
+        drawNetSprite(
+          ctx,
+          assetsRef.current,
+          netRef.current.x,
+          netRef.current.y,
+          GAME_PARAMS.catchRadius,
+          { shakeX },
+        );
+      }
 
       const scoop = scoopRef.current;
       const shakeT = now * 0.001;
@@ -1099,7 +1101,7 @@ function CatchFishGameInner() {
         });
       }
 
-      if (scoop) {
+      if (scoop && !throwBackSequenceRef.current) {
         const fish = fishRef.current.find((f) => f.id === scoop.fishId);
         if (fish) drawScoopProgressBar(ctx, fish.x, fish.y, fish.r, scoop.progress);
       }
@@ -1177,17 +1179,22 @@ function CatchFishGameInner() {
   };
 
   const onPointerDown: React.PointerEventHandler<HTMLCanvasElement> = (e) => {
-    if (status !== "playing" || !throwBackReady || throwBackExit || hasCatchfishReward) return;
+    if (status !== "playing" || throwBackExit || hasCatchfishReward) return;
     const pt = canvasPoint(e);
     if (!pt) return;
-    const idx = findLargeCaughtFishAt(pt.x, pt.y, caughtDisplayRef.current);
-    if (idx < 0) return;
-    e.preventDefault();
-    spaceHeldRef.current = false;
-    scoopRef.current = null;
-    sfxRef.current?.stopCatching();
-    canvasRef.current?.setPointerCapture(e.pointerId);
-    throwDragRef.current = { fishIndex: idx, x: pt.x, y: pt.y };
+
+    if (throwBackReady) {
+      const idx = findLargeCaughtFishAt(pt.x, pt.y, caughtDisplayRef.current);
+      if (idx >= 0) {
+        e.preventDefault();
+        spaceHeldRef.current = false;
+        scoopRef.current = null;
+        sfxRef.current?.stopCatching();
+        canvasRef.current?.setPointerCapture(e.pointerId);
+        throwDragRef.current = { fishIndex: idx, x: pt.x, y: pt.y };
+        return;
+      }
+    }
   };
 
   const onPointerMove: React.PointerEventHandler<HTMLCanvasElement> = (e) => {
@@ -1201,8 +1208,6 @@ function CatchFishGameInner() {
       throwDragRef.current.y = pt.y;
       return;
     }
-
-    if (throwBackReady) return;
 
     const pt = canvasPoint(e);
     if (!pt) return;
@@ -1281,7 +1286,7 @@ function CatchFishGameInner() {
       <div ref={containerRef} className="catchfish-stage">
       <canvas
         ref={canvasRef}
-        className={`catchfish-stage__canvas${throwBackReady ? " catchfish-stage__canvas--throwback" : ""}`}
+        className="catchfish-stage__canvas"
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
@@ -1293,12 +1298,14 @@ function CatchFishGameInner() {
         resource={netsRemaining}
         resourceLabel=""
         extra={
-          <CatchfishNetHud
-            netsRemaining={netsRemaining}
-            durability={durability}
-            assets={loadedAssets}
-            breakingSlot={breakingSlot}
-          />
+          throwBackExit ? null : (
+            <CatchfishNetHud
+              netsRemaining={netsRemaining}
+              durability={durability}
+              assets={loadedAssets}
+              breakingSlot={breakingSlot}
+            />
+          )
         }
       />
 
@@ -1307,12 +1314,6 @@ function CatchFishGameInner() {
           撈網損壞！更換新網（剩餘 {netsRemaining} 張）
         </div>
       )}
-
-      {throwBackReady ? (
-        <div className="catchfish-throwback-hint" role="status">
-          拖曳右側大魚丟回池中
-        </div>
-      ) : null}
 
       <GameRoundEndModal
         open={isGameOver && roundEnd !== null && !throwBackExit}

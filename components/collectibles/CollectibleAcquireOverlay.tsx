@@ -22,6 +22,7 @@ export default function CollectibleAcquireOverlay() {
 
   const isInspect = pending?.mode === "inspect";
   const waitingDialogue = !isInspect && pendingDialogue !== null;
+  const blockPointerEvents = !isInspect && !pendingDialogue;
 
   useEffect(() => {
     if (!pending) {
@@ -117,7 +118,9 @@ export default function CollectibleAcquireOverlay() {
     <div
       className={`collectible-acquire-overlay ${
         phase === "fly" ? "collectible-acquire-overlay--fly" : ""
-      } ${isInspect ? "collectible-acquire-overlay--inspect" : "collectible-acquire-overlay--blocking"}`}
+      } ${blockPointerEvents ? "collectible-acquire-overlay--blocking" : ""} ${
+        isInspect ? "collectible-acquire-overlay--inspect" : ""
+      }`}
       aria-live="polite"
     >
       <button

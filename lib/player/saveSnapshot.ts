@@ -22,6 +22,7 @@ export type GameSnapshot = {
   marketOpeningDone: boolean;
   boundaryIndex: number;
   seenEndingId: string | null;
+  seenEndingIds: string[];
   acquired: CollectibleId[];
   tokens: number;
   ticket10: number;
@@ -50,6 +51,7 @@ export function captureGameSnapshot(): GameSnapshot {
     marketOpeningDone: narrative.marketOpeningDone,
     boundaryIndex: narrative.boundaryIndex,
     seenEndingId: narrative.seenEndingId,
+    seenEndingIds: [...narrative.seenEndingIds],
     acquired: [...collectibles.acquired],
     tokens: economy.tokens,
     ticket10: economy.ticket10,
@@ -108,6 +110,9 @@ export function restoreGameSnapshot(snapshot: GameSnapshot) {
       marketOpeningDone: snapshot.marketOpeningDone,
       boundaryIndex: snapshot.boundaryIndex,
       seenEndingId: snapshot.seenEndingId,
+      seenEndingIds:
+        snapshot.seenEndingIds ??
+        (snapshot.seenEndingId ? [snapshot.seenEndingId] : []),
     }),
   );
 

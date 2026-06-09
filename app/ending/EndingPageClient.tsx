@@ -147,22 +147,13 @@ export default function EndingPageClient() {
           再次走入夜市
         </button>
       ) : (
-        <div className="flex flex-wrap gap-3 justify-center">
-          <button
-            type="button"
-            className="game-btn-ghost"
-            onClick={() => void goMarket("/market")}
-          >
-            回到夜市
-          </button>
-          <button
-            type="button"
-            className="game-btn-primary"
-            onClick={goHomeReplayIntro}
-          >
-            從頭開始
-          </button>
-        </div>
+        <button
+          type="button"
+          className="game-btn-primary"
+          onClick={goHomeReplayIntro}
+        >
+          從頭開始
+        </button>
       )}
     </div>
   );

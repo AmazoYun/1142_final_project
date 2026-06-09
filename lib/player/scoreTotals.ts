@@ -27,8 +27,7 @@ export function computeTotalScore(
   endingId: EndingId | null,
   scorePenalty = 0,
 ): number {
-  const raw = sumPlayHistory(playHistory) + endingScoreBonus(endingId) - scorePenalty;
-  return Math.max(0, raw);
+  return sumPlayHistory(playHistory) + endingScoreBonus(endingId) - scorePenalty;
 }
 
 export function migrateGameScoresToHistory(

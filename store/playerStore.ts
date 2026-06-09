@@ -12,7 +12,7 @@ import {
   restoreGameSnapshot,
 } from "@/lib/player/saveSnapshot";
 import type { GameScores, SaveRecord } from "@/lib/player/saveTypes";
-import { computeTotalScore, DIRECT_LEAVE_PENALTY, normalizeSaveScores } from "@/lib/player/scoreTotals";
+import { computeTotalScore, normalizeSaveScores } from "@/lib/player/scoreTotals";
 
 function readIntroDone(): boolean {
   if (typeof window === "undefined") return false;
@@ -158,15 +158,6 @@ function cloudProfileFromState(state: {
   return buildProfileForNickname(nickname, state.saves, introDone, state.activeSaveId);
 }
 
-function consumePendingDirectLeavePenalty(): boolean {
-  try {
-    const mod = require("@/store/narrativeStore") as typeof import("@/store/narrativeStore");
-    return mod.useNarrativeStore.getState().consumePendingDirectLeavePenalty();
-  } catch {
-    return false;
-  }
-}
-
 function applyIntroDoneFromCloud(introDone: boolean) {
   writeIntroDone(introDone);
 }
@@ -232,7 +223,7 @@ type PlayerStore = {
   beginNewRun: (nickname: string) => void;
   resumeRun: (nickname: string) => void;
   recordStallScore: (stallId: StallId, score: number) => void;
-  addScorePenalty: (amount: number) => void;
+  applyDirectLeavePenaltyToAllSaves: (amount: number) => void;
   finishRun: (endingId: EndingId) => void;
 };
 
@@ -400,13 +391,12 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
     const trimmed = nickname.trim();
     const now = Date.now();
     const saveId = createSaveId();
-    const scorePenalty = consumePendingDirectLeavePenalty() ? DIRECT_LEAVE_PENALTY : 0;
     const record: SaveRecord = {
       saveId,
       nickname: trimmed,
       playHistory: [],
-      scorePenalty,
-      totalScore: computeTotalScore([], null, scorePenalty),
+      scorePenalty: 0,
+      totalScore: computeTotalScore([], null, 0),
       endingId: null,
       isActive: true,
       updatedAt: now,
@@ -504,14 +494,17 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
     syncToFirebase(record);
   },
 
-  addScorePenalty: (amount) => {
-    const saveId = get().activeSaveId;
-    if (!saveId || amount <= 0) return;
-    const existing = get().saves.find((s) => s.saveId === saveId);
-    if (!existing) return;
+  applyDirectLeavePenaltyToAllSaves: (amount) => {
+    if (amount <= 0) return;
+    const nickname = get().loggedInNickname?.trim();
+    let changed = false;
+    const saves = get().saves.map((save) => {
+      if (nickname && save.nickname !== nickname) return save;
+      changed = true;
+      return applyScorePenaltyToRecord(save, amount);
+    });
+    if (!changed) return;
 
-    const record = applyScorePenaltyToRecord(existing, amount);
-    const saves = upsertSave(get().saves, record);
     const state = {
       loggedInNickname: get().loggedInNickname,
       activeSaveId: get().activeSaveId,
@@ -519,7 +512,6 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
     };
     set({ saves });
     persistSaves(state);
-    syncToFirebase(record);
   },
 
   finishRun: (endingId) => {

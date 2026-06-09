@@ -76,6 +76,7 @@ export default function StartPage() {
   const hydrateNarrative = useNarrativeStore((s) => s.hydrate);
   const narrativeHydrated = useNarrativeStore((s) => s.hydrated);
   const introDone = useNarrativeStore((s) => s.introDone);
+  const seenEndingIds = useNarrativeStore((s) => s.seenEndingIds);
 
   const [bootPhase, setBootPhase] = useState<BootPhase>("loading");
   const [showIntroReplay, setShowIntroReplay] = useState(false);
@@ -358,6 +359,8 @@ export default function StartPage() {
           open
           onClose={() => setHomeModal(null)}
           onSelectEnding={watchEnding}
+          seenEndingIds={seenEndingIds}
+          saves={playerSaves}
         />
       ) : null}
 
