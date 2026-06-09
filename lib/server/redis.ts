@@ -64,4 +64,12 @@ export const redis = {
     const result = await exec(["SMEMBERS", key]);
     return Array.isArray(result) ? (result as T[]) : [];
   },
+
+  async del(key: string): Promise<void> {
+    await exec(["DEL", key]);
+  },
+
+  async srem(key: string, member: string): Promise<void> {
+    await exec(["SREM", key, member]);
+  },
 };

@@ -21,25 +21,26 @@ function databaseUrl(): string | null {
   return url.replace(/\/$/, "");
 }
 
-function entryKey(nickname: string) {
-  return encodeURIComponent(nickname.trim());
+function entryKey(saveId: string) {
+  return encodeURIComponent(saveId);
 }
 
 function parseEntries(raw: unknown): LeaderboardEntry[] {
   if (!raw || typeof raw !== "object") return [];
-  return Object.entries(raw as Record<string, unknown>)
-    .map(([id, value]) => {
-      if (!value || typeof value !== "object") return null;
-      const row = value as Record<string, unknown>;
-      const nickname = typeof row.nickname === "string" ? row.nickname : "";
-      const totalScore = typeof row.totalScore === "number" ? row.totalScore : 0;
-      const endingId =
-        typeof row.endingId === "string" ? (row.endingId as EndingId) : null;
-      const updatedAt = typeof row.updatedAt === "number" ? row.updatedAt : 0;
-      if (!nickname) return null;
-      return { id, nickname, totalScore, endingId, updatedAt };
-    })
-    .filter((row): row is LeaderboardEntry => row !== null);
+  const entries: LeaderboardEntry[] = [];
+  for (const [id, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!value || typeof value !== "object") continue;
+    const row = value as Record<string, unknown>;
+    const saveId = typeof row.saveId === "string" ? row.saveId : id;
+    const nickname = typeof row.nickname === "string" ? row.nickname : "";
+    const totalScore = typeof row.totalScore === "number" ? row.totalScore : 0;
+    const endingId =
+      typeof row.endingId === "string" ? (row.endingId as EndingId) : null;
+    const updatedAt = typeof row.updatedAt === "number" ? row.updatedAt : 0;
+    if (!nickname || !endingId) continue;
+    entries.push({ id: saveId, nickname, totalScore, endingId, updatedAt });
+  }
+  return entries;
 }
 
 export function isLeaderboardConfigured() {
@@ -75,22 +76,24 @@ export async function fetchLeaderboardEntries(): Promise<LeaderboardEntry[]> {
 }
 
 export async function upsertLeaderboardEntry(entry: {
+  saveId: string;
   nickname: string;
   totalScore: number;
-  endingId: EndingId | null;
+  endingId: EndingId;
   updatedAt: number;
 }) {
   const base = databaseUrl();
   if (!base) return;
 
   const payload = {
+    saveId: entry.saveId,
     nickname: entry.nickname.trim(),
     totalScore: entry.totalScore,
     endingId: entry.endingId,
     updatedAt: entry.updatedAt,
   };
 
-  await fetch(`${base}/leaderboard/${entryKey(payload.nickname)}.json`, {
+  await fetch(`${base}/leaderboard/${entryKey(entry.saveId)}.json`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),

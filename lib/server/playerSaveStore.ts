@@ -7,20 +7,29 @@ import {
   playerSavesKey,
 } from "@/lib/server/validatePlayerSave";
 
-function pickLeaderboardEntry(saves: SaveRecord[]): LeaderboardCloudEntry | null {
-  if (saves.length === 0) return null;
-  const best = [...saves].sort((a, b) => {
-    if (b.totalScore !== a.totalScore) return b.totalScore - a.totalScore;
-    return b.updatedAt - a.updatedAt;
-  })[0];
+function collectLeaderboardEntries(saves: SaveRecord[]): LeaderboardCloudEntry[] {
+  return saves
+    .filter((save): save is SaveRecord & { endingId: NonNullable<SaveRecord["endingId"]> } =>
+      save.endingId != null,
+    )
+    .map((save) => ({
+      nickname: save.nickname,
+      totalScore: save.totalScore,
+      endingId: save.endingId,
+      updatedAt: save.updatedAt,
+      saveId: save.saveId,
+    }))
+    .sort((a, b) => {
+      if (b.totalScore !== a.totalScore) return b.totalScore - a.totalScore;
+      return b.updatedAt - a.updatedAt;
+    });
+}
 
-  return {
-    nickname: best.nickname,
-    totalScore: best.totalScore,
-    endingId: best.endingId,
-    updatedAt: best.updatedAt,
-    saveId: best.saveId,
-  };
+function normalizeLeaderboardRows(
+  raw: LeaderboardCloudEntry | LeaderboardCloudEntry[] | null,
+): LeaderboardCloudEntry[] {
+  if (!raw) return [];
+  return Array.isArray(raw) ? raw : [raw];
 }
 
 export async function readPlayerSaves(nickname: string): Promise<PlayerCloudPayload | null> {
@@ -49,10 +58,13 @@ export async function writePlayerProfile(
 
   await redis.set(playerSavesKey(nickname), payload);
 
-  const leaderboardEntry = pickLeaderboardEntry(payload.saves);
-  if (leaderboardEntry) {
-    await redis.set(leaderboardKey(nickname), leaderboardEntry);
+  const leaderboardEntries = collectLeaderboardEntries(payload.saves);
+  if (leaderboardEntries.length > 0) {
+    await redis.set(leaderboardKey(nickname), leaderboardEntries);
     await redis.sadd(LEADERBOARD_INDEX_KEY, nickname);
+  } else {
+    await redis.del(leaderboardKey(nickname));
+    await redis.srem(LEADERBOARD_INDEX_KEY, nickname);
   }
 
   return payload;
@@ -65,11 +77,13 @@ export async function listLeaderboardEntries(): Promise<LeaderboardCloudEntry[]>
   if (!nicknames.length) return [];
 
   const rows = await Promise.all(
-    nicknames.map(async (nickname) => redis.get<LeaderboardCloudEntry>(leaderboardKey(nickname))),
+    nicknames.map(async (nickname) =>
+      redis.get<LeaderboardCloudEntry | LeaderboardCloudEntry[]>(leaderboardKey(nickname)),
+    ),
   );
 
   return rows
-    .filter((row): row is LeaderboardCloudEntry => row !== null)
+    .flatMap((row) => normalizeLeaderboardRows(row))
     .sort((a, b) => {
       if (b.totalScore !== a.totalScore) return b.totalScore - a.totalScore;
       return b.updatedAt - a.updatedAt;

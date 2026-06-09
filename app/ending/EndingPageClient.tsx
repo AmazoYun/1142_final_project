@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import StorySequencePlayer from "@/components/narrative/StorySequencePlayer";
 import { getEndingScript } from "@/data/endings-default";
 import { prepareItemsForLeave } from "@/lib/endings/prepareLeave";
-import { fadeOutMainBgm, startMainBgm, stopHubBgm } from "@/lib/market/hubSounds";
+import { startMainBgm, stopHubBgm } from "@/lib/market/hubSounds";
 import { navigateWithFade } from "@/lib/navigation/navigateWithFade";
 import { usePageFadeIn } from "@/lib/navigation/usePageFadeIn";
 import type { EndingId } from "@/lib/endings/types";
@@ -23,20 +23,16 @@ function parsePreviewEndingId(raw: string | null): EndingId | null {
 export default function EndingPageClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const loopRestart = searchParams.get("loop") === "1";
   const previewEndingId = parsePreviewEndingId(searchParams.get("preview"));
   const isPreview = previewEndingId !== null;
   const hydrate = useNarrativeStore((s) => s.hydrate);
   const markEndingSeen = useNarrativeStore((s) => s.markEndingSeen);
-  const replayIntro = useNarrativeStore((s) => s.replayIntro);
   const finishRun = usePlayerStore((s) => s.finishRun);
   const hydratePlayers = usePlayerStore((s) => s.hydrate);
 
   usePageFadeIn();
 
-  const [endingId, setEndingId] = useState<EndingId | null>(
-    loopRestart ? "loop" : previewEndingId,
-  );
+  const [endingId, setEndingId] = useState<EndingId | null>(previewEndingId);
   const [playing, setPlaying] = useState(true);
   const [fadingOut, setFadingOut] = useState(false);
   const onCompleteCalledRef = useRef(false);
@@ -53,10 +49,6 @@ export default function EndingPageClient() {
       setEndingId(previewEndingId);
       return;
     }
-    if (loopRestart) {
-      markEndingSeen("loop");
-      return;
-    }
     const id = prepareItemsForLeave();
     setEndingId(id);
     markEndingSeen(id);
@@ -66,7 +58,6 @@ export default function EndingPageClient() {
     hydratePlayers,
     isPreview,
     previewEndingId,
-    loopRestart,
     markEndingSeen,
     finishRun,
   ]);
@@ -76,22 +67,9 @@ export default function EndingPageClient() {
     [endingId],
   );
 
-  const goMarket = useCallback(
-    async (href: string) => {
-      await fadeOutMainBgm();
-      await navigateWithFade(router, href);
-    },
-    [router],
-  );
-
-  const goHomeKeepBgm = useCallback(() => {
+  const goHome = useCallback(() => {
     void navigateWithFade(router, "/");
   }, [router]);
-
-  const goHomeReplayIntro = useCallback(() => {
-    replayIntro();
-    void fadeOutMainBgm().then(() => navigateWithFade(router, "/"));
-  }, [replayIntro, router]);
 
   const onComplete = useCallback(() => {
     if (onCompleteCalledRef.current) return;
@@ -99,12 +77,8 @@ export default function EndingPageClient() {
     setFadingOut(true);
     window.setTimeout(() => {
       setPlaying(false);
-      if (isPreview) return;
-      if (script?.restartMarket) {
-        void fadeOutMainBgm().then(() => router.push("/market?loop=1"));
-      }
     }, ENDING_FADE_MS);
-  }, [isPreview, router, script?.restartMarket]);
+  }, []);
 
   if (!endingId || !script) {
     return (
@@ -130,31 +104,9 @@ export default function EndingPageClient() {
   return (
     <div className="min-h-screen flex flex-col items-center justify-center hub-shell px-6 gap-6 bg-black">
       <h1 className="game-title text-xl">{script.title}</h1>
-      {isPreview ? (
-        <button
-          type="button"
-          className="game-btn-primary"
-          onClick={goHomeKeepBgm}
-        >
-          返回主畫面
-        </button>
-      ) : script.restartMarket ? (
-        <button
-          type="button"
-          className="game-btn-primary"
-          onClick={() => void goMarket("/market?loop=1")}
-        >
-          再次走入夜市
-        </button>
-      ) : (
-        <button
-          type="button"
-          className="game-btn-primary"
-          onClick={goHomeReplayIntro}
-        >
-          從頭開始
-        </button>
-      )}
+      <button type="button" className="game-btn-primary" onClick={goHome}>
+        返回主畫面
+      </button>
     </div>
   );
 }

@@ -13,6 +13,7 @@ import {
 } from "@/lib/player/saveSnapshot";
 import type { GameScores, SaveRecord } from "@/lib/player/saveTypes";
 import { computeTotalScore, normalizeSaveScores } from "@/lib/player/scoreTotals";
+import { canEnterSave } from "@/lib/player/saveProgress";
 
 function readIntroDone(): boolean {
   if (typeof window === "undefined") return false;
@@ -121,7 +122,9 @@ function savePersisted(data: PersistedV2) {
 }
 
 function syncToFirebase(record: SaveRecord) {
+  if (!record.endingId) return;
   void upsertLeaderboardEntry({
+    saveId: record.saveId,
     nickname: record.nickname,
     totalScore: record.totalScore,
     endingId: record.endingId,
@@ -423,7 +426,7 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
     get().snapshotActiveSave();
 
     const target = get().saves.find((s) => s.saveId === saveId);
-    if (!target) return;
+    if (!target || !canEnterSave(target.endingId, target.isActive)) return;
 
     const now = Date.now();
     let record: SaveRecord = { ...target, isActive: true, updatedAt: now };
