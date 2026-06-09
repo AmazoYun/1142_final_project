@@ -15,6 +15,9 @@ const CREDITS: { role: string; members: string | readonly string[] }[] = [
   },
   { role: "前端架設", members: "歷史四  吳尚鴻  廣電四  許兆豐" },
   { role: "後端架設", members: "廣電四  許兆豐" },
+  { role: "海報設計", members: "心理三  鄧伯希" },
+  { role: "展示網頁", members: "歷史四  吳尚鴻" },
+  { role: "簡報與影片", members: "歷史四  吳尚鴻" },
   {
     role: "音樂素材",
     members: [

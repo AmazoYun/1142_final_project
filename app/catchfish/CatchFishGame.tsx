@@ -348,8 +348,10 @@ function CatchFishGameInner() {
     if (pendingAcquireDialogue) return;
     if (pendingAcquireAnimation?.mode === "acquire") return;
     catchfishExitPendingRef.current = false;
+    resetToIdle();
+    resetGameRef.current();
     void navigateToMarketFromGame(router);
-  }, [pendingAcquireDialogue, pendingAcquireAnimation, router]);
+  }, [pendingAcquireDialogue, pendingAcquireAnimation, resetToIdle, router]);
 
   useEffect(() => {
     document.title = "撈金魚｜無人夜市";
@@ -412,18 +414,38 @@ function CatchFishGameInner() {
     };
   }, []);
 
-  /** 進入頁面後直接開始（玩法說明已在攤位顯示） */
+  /** 離開頁面時重置 Zustand，避免下次進入仍保留上局分數與漁網 */
   useEffect(() => {
-    if (!loadedAssets || status !== "idle") return;
+    return () => {
+      resetToIdle();
+    };
+  }, [resetToIdle]);
+
+  /** 每次進入頁面：清除本局與丟魚演出狀態，再從 idle 開新局 */
+  useEffect(() => {
+    if (!loadedAssets) return;
+
     catchfishRewardGrantedRef.current = false;
+    catchfishExitPendingRef.current = false;
+    throwBackSequenceRef.current = false;
+    bloodyAlphaRef.current = 0;
+    bloodyFadeStartRef.current = null;
     largeFishCaughtRef.current = 0;
     totalFishCaughtRef.current = 0;
     sevenFishBonusGivenRef.current = false;
     roundEndHandledRef.current = false;
     setRoundEnd(null);
+    setThrowBackExit(false);
+    setThrowBackReady(false);
+    setDarkRedUiAlpha(0);
+    resetToIdle();
+  }, [loadedAssets, resetToIdle]);
+
+  useEffect(() => {
+    if (!loadedAssets || status !== "idle") return;
     startGame();
     resetGameRef.current();
-  }, [loadedAssets, startGame, status]);
+  }, [loadedAssets, status, startGame]);
 
   /** 開始／再玩：先重置 Zustand，再重置 Canvas 魚群與撈網位置 */
   const dismissRoundEndUi = () => {

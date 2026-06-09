@@ -2645,6 +2645,54 @@ body.game-loading-active {
   overflow: hidden;
 }
 
+body.mobile-desktop-guard-active {
+  overflow: hidden;
+}
+
+.mobile-desktop-guard {
+  position: fixed;
+  inset: 0;
+  z-index: 20000;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.mobile-desktop-guard__scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+}
+
+.mobile-desktop-guard__panel {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100%;
+  padding: 1.75rem;
+  box-sizing: border-box;
+}
+
+.mobile-desktop-guard__message {
+  margin: 0;
+  max-width: 24rem;
+  text-align: center;
+  font-family:
+    system-ui,
+    -apple-system,
+    "PingFang TC",
+    "Microsoft JhengHei",
+    "Noto Sans TC",
+    sans-serif;
+  font-size: 1.05rem;
+  font-weight: 600;
+  line-height: 1.85;
+  letter-spacing: 0.06em;
+  color: #f5eed8;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.85);
+}
+
 .game-loading-overlay {
   position: fixed;
   inset: 0;
