@@ -338,8 +338,8 @@ export const STALL_BGM_OUTER_RANGE_PX = 400;
 export const STALL_BGM_INNER_RANGE_PX = 200;
 /** @deprecated 使用 STALL_BGM_OUTER_RANGE_PX */
 export const STALL_BGM_RANGE_PX = STALL_BGM_OUTER_RANGE_PX;
-export const STALL_BGM_MIN_VOLUME = 0.035;
-export const STALL_BGM_MAX_VOLUME = 0.15;
+export const STALL_BGM_MIN_VOLUME = 0.05;
+export const STALL_BGM_MAX_VOLUME = 0.19;
 
 export function stallBgmVolumeForDistance(dist: number): number {
   if (dist >= STALL_BGM_OUTER_RANGE_PX) return 0;

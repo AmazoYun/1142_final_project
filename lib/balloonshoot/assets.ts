@@ -21,8 +21,8 @@ export const BALLOON_COLOR_HEX: Record<BalloonColor, string> = {
 };
 
 export const BALLOON_ADVANCED_BUTTON = {
-  unpressed: "/ringtoss/button_unpressed.webp",
-  pressed: "/ringtoss/button_pressed.webp",
+  unpressed: "/balloonshoot/button_unpressed.webp",
+  pressed: "/balloonshoot/button_pressed.webp",
 } as const;
 
 export type BalloonAssets = {

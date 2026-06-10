@@ -40,10 +40,7 @@ import {
   normalizeBalloonLayout,
   type BalloonLayoutData,
 } from "@/lib/balloonshoot/layoutData";
-import {
-  balloonAdvancedButtonMobileStyle,
-  balloonAdvancedButtonStyle,
-} from "@/lib/balloonshoot/advancedButtonLayout";
+import { BALLOON_ADVANCED_BUTTON_HIT_STYLE } from "@/lib/balloonshoot/advancedButtonLayout";
 import { createBalloonShootSoundFx, type BalloonShootSoundFx } from "@/lib/balloonshoot/sounds";
 
 const W = 960;
@@ -855,9 +852,6 @@ export default function BalloonShootGame() {
   };
 
   const showAdvancedButton = hasFortuneYi && !hasBalloonReward;
-  const advancedButtonStyle = showMobileControls
-    ? balloonAdvancedButtonMobileStyle(W, H)
-    : balloonAdvancedButtonStyle(W, H);
 
   useStallRoundEndLeave(
     "balloonshoot",
@@ -887,25 +881,28 @@ export default function BalloonShootGame() {
           />
 
           {showAdvancedButton ? (
-            <button
-              type="button"
-              className="balloonshoot-advanced-btn"
-              style={advancedButtonStyle}
-              disabled={gameOver || !layoutReady}
-              aria-label="進階模式"
-              onClick={onAdvancedButtonClick}
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={
-                  advancedStarted
-                    ? BALLOON_ADVANCED_BUTTON.pressed
-                    : BALLOON_ADVANCED_BUTTON.unpressed
-                }
-                alt=""
-                draggable={false}
+            <>
+              <div className="balloonshoot-advanced-btn-overlay" aria-hidden>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={
+                    advancedStarted
+                      ? BALLOON_ADVANCED_BUTTON.pressed
+                      : BALLOON_ADVANCED_BUTTON.unpressed
+                  }
+                  alt=""
+                  draggable={false}
+                />
+              </div>
+              <button
+                type="button"
+                className="balloonshoot-advanced-btn"
+                style={BALLOON_ADVANCED_BUTTON_HIT_STYLE}
+                disabled={gameOver || !layoutReady}
+                aria-label="進階模式"
+                onClick={onAdvancedButtonClick}
               />
-            </button>
+            </>
           ) : null}
         </div>
 
