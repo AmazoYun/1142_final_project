@@ -88,7 +88,7 @@ export default function CharmPickupBar({ spawn, worldX, groundY, glowing, visibl
         <img
           src={FORTUNE_SLIP_IMAGE}
           alt=""
-          className="hub-lottery-drop__ticket"
+          className="hub-lottery-drop__ticket hub-lottery-drop__ticket--fortune"
           draggable={false}
         />
       </div>

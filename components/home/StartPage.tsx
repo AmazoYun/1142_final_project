@@ -267,7 +267,7 @@ export default function StartPage() {
         role={showButtons ? undefined : "button"}
         tabIndex={showButtons ? undefined : 0}
       >
-        <div className="w-full max-w-xl flex flex-col items-center gap-8">
+        <div className="start-page__panel w-full max-w-xl flex flex-col items-center gap-8">
           <header className="start-page__header text-center space-y-2">
             <h1 className="start-page__title game-title text-2xl sm:text-3xl tracking-widest">
               <span className="start-page__title-base">無人夜市</span>
@@ -287,7 +287,7 @@ export default function StartPage() {
           </header>
 
           <div
-            className={`start-page__actions flex w-full flex-col items-stretch gap-4${showButtons ? " is-visible" : ""}`}
+            className={`start-page__actions flex w-full flex-col items-stretch${showButtons ? " is-visible" : ""}`}
           >
             <button type="button" className="game-btn-primary w-full text-center text-base px-10 py-3" onClick={openStartFlow}>
               開始遊戲
@@ -378,7 +378,7 @@ export default function StartPage() {
           saves={playerSaves}
           mode={homeModal === "save-play" ? "play" : "view"}
           onClose={() => setHomeModal(null)}
-          onSelectSave={homeModal === "save-play" ? enterExistingSave : undefined}
+          onSelectSave={enterExistingSave}
           onNewSave={homeModal === "save-play" ? () => startNewSaveAndEnter(loggedInNickname) : undefined}
         />
       ) : null}

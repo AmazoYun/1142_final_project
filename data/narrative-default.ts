@@ -73,7 +73,7 @@ export const narrativeDefault: NarrativeBundle = {
   ],
   moveHint: {
     id: "move-hint",
-    text: "請按鍵盤左右鍵移動",
+    text: "左右鍵移動（手機橫屏：⬅➡）",
   },
   boundaryLines: [
     { id: "bnd-d1", speaker: "主角", text: "後面好像過不去了" },

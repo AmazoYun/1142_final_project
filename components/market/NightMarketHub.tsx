@@ -58,12 +58,15 @@ import {
 import { createHubSoundFx, stopHubBgm, type HubSoundFx } from "@/lib/market/hubSounds";
 import { purgeCollectedCharmSpawns } from "@/lib/collectibles/spawnFortuneSlip";
 import { resolveCharmWorldPositions } from "@/lib/market/charmSpawnPlacement";
+import { resolvePointCardWorldX } from "@/lib/market/pointCardSpawnPlacement";
 import { loadLotteryFrontMask } from "@/lib/market/lotteryFrontMask";
 import { preloadHubSceneAssets, isHubScenePreloaded } from "@/lib/market/hubAssetPreload";
 import type { StallId } from "@/lib/narrative/types";
 import { useStoryAdvance } from "@/lib/useStoryAdvance";
 import { navigateWithFade } from "@/lib/navigation/navigateWithFade";
+import MobileTouchButton from "@/components/game/MobileTouchButton";
 import { usePageFadeIn } from "@/lib/navigation/usePageFadeIn";
+import { useMobilePlay } from "@/lib/navigation/mobilePlay";
 import { isAcquireSequenceBlocking } from "@/lib/collectibles/acquireSequence";
 import { useCollectibleStore } from "@/store/collectibleStore";
 import { useNarrativeStore } from "@/store/narrativeStore";
@@ -73,7 +76,6 @@ import { useTokenStore } from "@/store/tokenStore";
 const REQUIRED_STALLS = 4;
 
 const PLAYER_SPEED = 4 * 0.7;
-const DRAG_MOVE_FACTOR = 0.8 * 0.7;
 const MOVE_HINT_HIDE_MS = 3000;
 
 function trackSuccessfulMove(
@@ -154,7 +156,8 @@ export default function NightMarketHub() {
   const [pointCardSpawned, setPointCardSpawned] = useState(false);
   const keysRef = useRef({ left: false, right: false });
   const movedMsRef = useRef(0);
-  const dragRef = useRef<{ active: boolean; lastX: number }>({ active: false, lastX: 0 });
+  const { showMobileControls } = useMobilePlay();
+  const [mobileMoveActive, setMobileMoveActive] = useState({ left: false, right: false });
   const sfxRef = useRef<HubSoundFx | null>(null);
   const skipNextSaveRef = useRef(true);
   const playerAnimRef = useRef<{ facing: "left" | "right"; walking: boolean }>({
@@ -170,6 +173,7 @@ export default function NightMarketHub() {
   const [shadowSaving, setShadowSaving] = useState(false);
   const [charmWorldX, setCharmWorldX] = useState<Record<string, number>>({});
   const [charmLayoutResolved, setCharmLayoutResolved] = useState(true);
+  const [pointCardWorldX, setPointCardWorldX] = useState<number | null>(null);
 
   const updatePlayerAnim = useCallback(
     (facing: "left" | "right", walking: boolean) => {
@@ -200,7 +204,9 @@ export default function NightMarketHub() {
 
   useEffect(() => {
     if (!movementLocked) return;
-    dragRef.current.active = false;
+    keysRef.current.left = false;
+    keysRef.current.right = false;
+    setMobileMoveActive({ left: false, right: false });
     keysRef.current.left = false;
     keysRef.current.right = false;
     updatePlayerAnim(playerAnimRef.current.facing, false);
@@ -429,8 +435,7 @@ export default function NightMarketHub() {
       if (keysRef.current.left) dx -= PLAYER_SPEED * (dt / 16);
       if (keysRef.current.right) dx += PLAYER_SPEED * (dt / 16);
 
-      const walking =
-        keysRef.current.left || keysRef.current.right || dragRef.current.active;
+      const walking = keysRef.current.left || keysRef.current.right;
       let facing = playerAnimRef.current.facing;
       if (keysRef.current.left) facing = "left";
       else if (keysRef.current.right) facing = "right";
@@ -610,17 +615,31 @@ export default function NightMarketHub() {
   const pointCardStallId =
     pointCardSpawned && !hasPointCard ? pointCardSpawnStall : null;
 
-  const pointCardGroundPos = useMemo(() => {
-    if (!pointCardStallId) return null;
-    const stall = hubLayout.stalls.find(
-      (s) => s.kind === "interactive" && s.id === pointCardStallId,
+  useEffect(() => {
+    if (!pointCardStallId) {
+      setPointCardWorldX(null);
+      return;
+    }
+
+    let cancelled = false;
+    void resolvePointCardWorldX(pointCardStallId, metrics, shadowPlacements).then(
+      (worldX) => {
+        if (!cancelled) setPointCardWorldX(worldX);
+      },
     );
-    if (!stall || stall.kind !== "interactive") return null;
+
+    return () => {
+      cancelled = true;
+    };
+  }, [pointCardStallId, metrics, shadowPlacements]);
+
+  const pointCardGroundPos = useMemo(() => {
+    if (!pointCardStallId || pointCardWorldX == null) return null;
     return {
-      worldX: stallCenterX(stall, metrics),
+      worldX: pointCardWorldX,
       groundY: lotteryGroundY(metrics),
     };
-  }, [pointCardStallId, hubLayout, metrics]);
+  }, [pointCardStallId, pointCardWorldX, metrics]);
 
   const pointCardIsNear = Boolean(
     pointCardGroundPos &&
@@ -694,7 +713,9 @@ export default function NightMarketHub() {
   }, [router]);
 
   return (
-    <div className="hub-shell h-screen flex flex-col overflow-hidden">
+    <div
+      className={`hub-shell h-screen flex flex-col overflow-hidden${showMobileControls ? " hub-shell--mobile" : ""}`}
+    >
       {showHubChrome ? (
         <header className="game-header shrink-0 flex items-center justify-between px-4 py-2">
           <button
@@ -906,7 +927,7 @@ export default function NightMarketHub() {
             ) : null}
 
             {moveHintVisible && !movementLocked && (
-              <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20">
+              <div className="hub-move-hint absolute top-4 inset-x-0 z-20 flex justify-center px-4">
                 <SceneCaption
                   id={narrativeDefault.moveHint.id}
                   text={getText(
@@ -927,40 +948,72 @@ export default function NightMarketHub() {
               </div>
             )}
 
-            {!movementLocked && (
-              <div
-                className="absolute inset-0 z-10 touch-none md:hidden"
-                onPointerDown={(e) => {
-                  dragRef.current = { active: true, lastX: e.clientX };
-                }}
-                onPointerMove={(e) => {
-                  if (!dragRef.current.active) return;
-                  const dx = e.clientX - dragRef.current.lastX;
-                  dragRef.current.lastX = e.clientX;
-                  if (Math.abs(dx) < 0.5) return;
-                  if (dx < 0) updatePlayerAnim("left", true);
-                  else if (dx > 0) updatePlayerAnim("right", true);
-                  setPlayerX((x) => {
-                    const nx = movePlayer(x + dx * DRAG_MOVE_FACTOR);
-                    trackSuccessfulMove(
-                      movedMsRef,
-                      16,
-                      nx !== x,
-                      setMoveHintVisible,
-                    );
-                    return nx;
-                  });
-                }}
-                onPointerUp={() => {
-                  dragRef.current.active = false;
-                  updatePlayerAnim(playerAnimRef.current.facing, false);
-                }}
-                onPointerLeave={() => {
-                  dragRef.current.active = false;
-                  updatePlayerAnim(playerAnimRef.current.facing, false);
-                }}
-              />
-            )}
+            {showMobileControls && !movementLocked ? (
+              <div className="hub-mobile-move-controls" aria-hidden={false}>
+                <MobileTouchButton
+                  placement="left"
+                  variant="arrow"
+                  active={mobileMoveActive.left}
+                  aria-label="向左移動"
+                  onPointerDown={(e) => {
+                    e.preventDefault();
+                    keysRef.current.left = true;
+                    setMobileMoveActive((s) => ({ ...s, left: true }));
+                  }}
+                  onPointerUp={() => {
+                    keysRef.current.left = false;
+                    setMobileMoveActive((s) => ({ ...s, left: false }));
+                    if (!keysRef.current.right) {
+                      updatePlayerAnim(playerAnimRef.current.facing, false);
+                    }
+                  }}
+                  onPointerLeave={() => {
+                    keysRef.current.left = false;
+                    setMobileMoveActive((s) => ({ ...s, left: false }));
+                    if (!keysRef.current.right) {
+                      updatePlayerAnim(playerAnimRef.current.facing, false);
+                    }
+                  }}
+                  onPointerCancel={() => {
+                    keysRef.current.left = false;
+                    setMobileMoveActive((s) => ({ ...s, left: false }));
+                  }}
+                >
+                  ⬅
+                </MobileTouchButton>
+                <MobileTouchButton
+                  placement="right"
+                  variant="arrow"
+                  active={mobileMoveActive.right}
+                  aria-label="向右移動"
+                  onPointerDown={(e) => {
+                    e.preventDefault();
+                    keysRef.current.right = true;
+                    setMobileMoveActive((s) => ({ ...s, right: true }));
+                  }}
+                  onPointerUp={() => {
+                    keysRef.current.right = false;
+                    setMobileMoveActive((s) => ({ ...s, right: false }));
+                    if (!keysRef.current.left) {
+                      updatePlayerAnim(playerAnimRef.current.facing, false);
+                    }
+                  }}
+                  onPointerLeave={() => {
+                    keysRef.current.right = false;
+                    setMobileMoveActive((s) => ({ ...s, right: false }));
+                    if (!keysRef.current.left) {
+                      updatePlayerAnim(playerAnimRef.current.facing, false);
+                    }
+                  }}
+                  onPointerCancel={() => {
+                    keysRef.current.right = false;
+                    setMobileMoveActive((s) => ({ ...s, right: false }));
+                  }}
+                >
+                  ➡
+                </MobileTouchButton>
+              </div>
+            ) : null}
           </>
         ) : null}
 

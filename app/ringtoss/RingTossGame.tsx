@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import GameBackpackButton from "@/components/collectibles/GameBackpackButton";
 import GameHudBar from "@/components/game/GameHudBar";
+import { useMobilePlay } from "@/lib/navigation/mobilePlay";
 import GamePageHeader from "@/components/game/GamePageHeader";
 import {
   GameRoundActiveProvider,
@@ -249,6 +250,7 @@ function RingTossGameInner() {
   const [redMode, setRedMode] = useState(false);
   const [redMessage, setRedMessage] = useState<string | null>(null);
   const { setRoundActive } = useGameRoundActive();
+  const { showMobileControls } = useMobilePlay();
 
   const pendingAcquireDialogue = useCollectibleStore((s) => s.pendingAcquireDialogue);
   const pendingAcquireAnimation = useCollectibleStore((s) => s.pendingAcquireAnimation);
@@ -708,7 +710,7 @@ function RingTossGameInner() {
         ref={canvasRef}
         className="ringtoss-stage__canvas"
         onPointerDown={() => {
-          if (redMessageRef.current) return;
+          if (showMobileControls || redMessageRef.current) return;
           confirmAim();
         }}
         onDragOver={allowMarbleDrop}

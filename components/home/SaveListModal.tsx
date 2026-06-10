@@ -39,8 +39,8 @@ function SaveCard({
   mode: "play" | "view";
   onSelectSave?: (saveId: string) => void;
 }) {
-  const enterable = canEnterSave(save.endingId, save.isActive);
-  const clickable = mode === "play" && enterable && onSelectSave;
+  const enterable = canEnterSave(save.endingId);
+  const clickable = enterable && !!onSelectSave;
 
   return (
     <button
@@ -70,8 +70,10 @@ function SaveCard({
           {save.endingId ? `（${endingLabel(save.endingId)}）` : ""}
         </dd>
       </dl>
-      {mode === "play" && save.endingId ? (
+      {save.endingId ? (
         <p className="save-list-modal__hint text-xs">此存檔已結束，無法繼續遊玩</p>
+      ) : enterable && onSelectSave ? (
+        <p className="save-list-modal__hint text-xs">點擊繼續遊玩</p>
       ) : null}
     </button>
   );
@@ -94,10 +96,10 @@ export default function SaveListModal({
     [saves],
   );
 
-  const playSave = useMemo(() => {
-    if (saves.length === 0) return null;
-    return [...saves].sort((a, b) => b.updatedAt - a.updatedAt)[0] ?? null;
-  }, [saves]);
+  const resumableSaves = useMemo(
+    () => [...saves].filter((save) => canEnterSave(save.endingId)).sort((a, b) => b.updatedAt - a.updatedAt),
+    [saves],
+  );
 
   const totalPages = Math.max(1, Math.ceil(sortedByCreated.length / SAVES_PER_PAGE));
   const safePage = Math.min(page, totalPages);
@@ -111,9 +113,7 @@ export default function SaveListModal({
 
   const visibleSaves =
     mode === "play"
-      ? playSave
-        ? [playSave]
-        : []
+      ? resumableSaves
       : sortedByCreated.slice((safePage - 1) * SAVES_PER_PAGE, safePage * SAVES_PER_PAGE);
 
   return (

@@ -32,6 +32,7 @@ export function formatEndingStatus(endingId: EndingId | null): string {
   return endingId ? "已達成" : "尚未達成";
 }
 
-export function canEnterSave(endingId: EndingId | null, isActive: boolean): boolean {
-  return isActive && !endingId;
+/** 尚未達成結局的存檔皆可繼續遊玩（含已中斷的舊存檔） */
+export function canEnterSave(endingId: EndingId | null): boolean {
+  return !endingId;
 }

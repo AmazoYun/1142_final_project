@@ -393,6 +393,11 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
 
     const trimmed = nickname.trim();
     const now = Date.now();
+    const deactivated = get().saves.map((save) =>
+      save.nickname === trimmed && !save.endingId && save.isActive
+        ? { ...save, isActive: false, updatedAt: now }
+        : save,
+    );
     const saveId = createSaveId();
     const record: SaveRecord = {
       saveId,
@@ -406,7 +411,7 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
       createdAt: now,
       snapshot: captureGameSnapshot(),
     };
-    const saves = upsertSave(get().saves, record);
+    const saves = upsertSave(deactivated, record);
     const state = {
       loggedInNickname: trimmed,
       activeSaveId: saveId,
@@ -426,7 +431,7 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
     get().snapshotActiveSave();
 
     const target = get().saves.find((s) => s.saveId === saveId);
-    if (!target || !canEnterSave(target.endingId, target.isActive)) return;
+    if (!target || !canEnterSave(target.endingId)) return;
 
     const now = Date.now();
     let record: SaveRecord = { ...target, isActive: true, updatedAt: now };
@@ -437,7 +442,13 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
       restoreGameSnapshot(record.snapshot);
     }
 
-    const saves = upsertSave(get().saves, record);
+    const saves = get().saves.map((save) => {
+      if (save.saveId === saveId) return record;
+      if (save.nickname === target.nickname && !save.endingId && save.isActive) {
+        return { ...save, isActive: false, updatedAt: now };
+      }
+      return save;
+    });
     const nextState = {
       loggedInNickname: target.nickname,
       activeSaveId: saveId,

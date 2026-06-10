@@ -39,8 +39,8 @@ export default function StallHowToModal({ script, playerX, worldWidth, onClose }
   return (
     <div className="fixed inset-0 z-[60] hub-shell flex items-center justify-center p-4 animate-fade-in">
       <div className="absolute inset-0 hub-world-sky opacity-95" />
-      <ScoreBoardPanel variant="modal" className="relative max-w-lg w-full">
-        <div className="space-y-4">
+      <ScoreBoardPanel variant="modal" className="relative max-w-lg w-full stall-how-to-modal">
+        <div className="space-y-3">
           <h2 className="score-board-panel__title">{script.title}</h2>
           <div className="score-board-panel__body stall-how-to space-y-3">
             {script.howToPlay.map((section) => (

@@ -5,6 +5,7 @@ import GamePageHeader from "@/components/game/GamePageHeader";
 import { GameRoundActiveProvider } from "@/components/game/GameRoundActiveContext";
 import { startHubBgm } from "@/lib/market/hubSounds";
 import { createAmbientRandomSfx } from "@/lib/sfx/randomSfx";
+import { useMobilePlay } from "@/lib/navigation/mobilePlay";
 import { usePageFadeIn } from "@/lib/navigation/usePageFadeIn";
 
 type Props = {
@@ -17,6 +18,7 @@ type Props = {
 /** 四款小遊戲共用頂欄；遊戲本體自行排版，外殼不擠壓版面 */
 export default function GameShell({ title, children, className = "", backpack }: Props) {
   usePageFadeIn();
+  const { showMobileControls } = useMobilePlay();
 
   useEffect(() => {
     document.title = `${title}｜無人夜市`;
@@ -32,7 +34,9 @@ export default function GameShell({ title, children, className = "", backpack }:
 
   return (
     <GameRoundActiveProvider>
-      <div className={`game-stage-shell min-h-screen flex flex-col ${className}`.trim()}>
+      <div
+        className={`game-stage-shell min-h-screen flex flex-col${showMobileControls ? " game-stage-shell--mobile-header" : ""} ${className}`.trim()}
+      >
         <GamePageHeader title={title} backpack={backpack} />
         <div className="flex-1 min-h-0 w-full">{children}</div>
       </div>

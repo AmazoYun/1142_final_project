@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { useGameRoundActive } from "@/components/game/GameRoundActiveContext";
 import GameHudBar from "@/components/game/GameHudBar";
 import GameRoundEndModal from "@/components/game/GameRoundEndModal";
+import MobileTouchButton from "@/components/game/MobileTouchButton";
+import { useMobilePlay } from "@/lib/navigation/mobilePlay";
 import { hasCollectible } from "@/lib/collectibles/acquireItem";
 import { isGameInputBlocked } from "@/lib/collectibles/isGameInputBlocked";
 import { awardStallReward } from "@/lib/collectibles/awardStallReward";
@@ -38,6 +40,10 @@ import {
   normalizeBalloonLayout,
   type BalloonLayoutData,
 } from "@/lib/balloonshoot/layoutData";
+import {
+  balloonAdvancedButtonMobileStyle,
+  balloonAdvancedButtonStyle,
+} from "@/lib/balloonshoot/advancedButtonLayout";
 import { createBalloonShootSoundFx, type BalloonShootSoundFx } from "@/lib/balloonshoot/sounds";
 
 const W = 960;
@@ -386,6 +392,14 @@ export default function BalloonShootGame() {
   const balloonsRef = useRef<Balloon[]>(createBalloons(layoutRef.current));
   const aimWorldRef = useRef({ x: W / 2, y: H / 2 });
   const aimModeRef = useRef(false);
+  const mobileAimDragRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    lastX: number;
+    lastY: number;
+    wasAimingOnDown: boolean;
+  } | null>(null);
   const rotationRef = useRef<Record<Zone, number>>({ left: 0, center: 0, right: 0 });
   const scoredARef = useRef<Set<Zone>>(new Set());
   const shotFlashRef = useRef<ShotFlash | null>(null);
@@ -400,6 +414,7 @@ export default function BalloonShootGame() {
   const [layoutReady, setLayoutReady] = useState(false);
 
   const router = useRouter();
+  const { showMobileControls } = useMobilePlay();
   const tokens = useTokenStore((s) => s.tokens);
   const hydrateCollectibles = useCollectibleStore((s) => s.hydrate);
   const collectiblesHydrated = useCollectibleStore((s) => s.hydrated);
@@ -539,6 +554,23 @@ export default function BalloonShootGame() {
     };
   }, []);
 
+  const panAimByScreenDelta = useCallback((dx: number, dy: number) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+
+    const scaleX = W / rect.width;
+    const scaleY = H / rect.height;
+    const viewW = SCOPE_DIAMETER / ZOOM;
+    const viewH = SCOPE_DIAMETER / ZOOM;
+
+    aimWorldRef.current = {
+      x: clamp(aimWorldRef.current.x + dx * scaleX, viewW / 2, W - viewW / 2),
+      y: clamp(aimWorldRef.current.y + dy * scaleY, viewH / 2, H - viewH / 2),
+    };
+  }, []);
+
   const shootAtCrosshair = useCallback(
     (now: number) => {
       if (!aimModeRef.current || gameOverRef.current || bulletsRef.current <= 0) return;
@@ -558,6 +590,28 @@ export default function BalloonShootGame() {
     },
     [spendBullet],
   );
+
+  const startAiming = useCallback(() => {
+    if (isGameInputBlocked()) return;
+    if (gameOverRef.current || bulletsRef.current <= 0) return;
+    if (aimModeRef.current) return;
+    aimModeRef.current = true;
+    setAimMode(true);
+    sfxRef.current?.startAiming();
+  }, []);
+
+  const stopAiming = useCallback(() => {
+    if (!aimModeRef.current) return;
+    aimModeRef.current = false;
+    setAimMode(false);
+    sfxRef.current?.stopAiming();
+  }, []);
+
+  const fireFromMobile = useCallback(() => {
+    if (!aimModeRef.current) return;
+    shootAtCrosshair(performance.now());
+    stopAiming();
+  }, [shootAtCrosshair, stopAiming]);
 
   useEffect(() => {
     loadBalloonAssets()
@@ -689,7 +743,80 @@ export default function BalloonShootGame() {
     aimWorldRef.current = getCanvasPoint(e.clientX, e.clientY);
   };
 
+  const onPointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (!showMobileControls || !aimModeRef.current) return;
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+  };
+
+  const onPointerCancel = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (!showMobileControls) return;
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+  };
+
+  const onMobileAimPointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    if (gameOverRef.current || bulletsRef.current <= 0) return;
+
+    const wasAiming = aimModeRef.current;
+    if (!wasAiming) startAiming();
+
+    mobileAimDragRef.current = {
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      startY: e.clientY,
+      lastX: e.clientX,
+      lastY: e.clientY,
+      wasAimingOnDown: wasAiming,
+    };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+
+  const onMobileAimPointerMove = (e: React.PointerEvent<HTMLButtonElement>) => {
+    const drag = mobileAimDragRef.current;
+    if (!drag || drag.pointerId !== e.pointerId || !aimModeRef.current) return;
+
+    const dx = e.clientX - drag.lastX;
+    const dy = e.clientY - drag.lastY;
+    if (dx === 0 && dy === 0) return;
+
+    drag.lastX = e.clientX;
+    drag.lastY = e.clientY;
+    panAimByScreenDelta(dx, dy);
+  };
+
+  const finishMobileAimPointer = (
+    e: React.PointerEvent<HTMLButtonElement>,
+    cancelled: boolean,
+  ) => {
+    const drag = mobileAimDragRef.current;
+    if (!drag || drag.pointerId !== e.pointerId) return;
+
+    mobileAimDragRef.current = null;
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+
+    if (cancelled) return;
+
+    const moved =
+      (e.clientX - drag.startX) ** 2 + (e.clientY - drag.startY) ** 2 > 64;
+    if (!moved && drag.wasAimingOnDown) {
+      stopAiming();
+    }
+  };
+
   const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (showMobileControls) {
+      if (!aimModeRef.current) return;
+      e.preventDefault();
+      aimWorldRef.current = getCanvasPoint(e.clientX, e.clientY);
+      e.currentTarget.setPointerCapture(e.pointerId);
+      return;
+    }
     if (!aimModeRef.current || e.button !== 0) return;
     e.preventDefault();
     aimWorldRef.current = getCanvasPoint(e.clientX, e.clientY);
@@ -728,6 +855,9 @@ export default function BalloonShootGame() {
   };
 
   const showAdvancedButton = hasFortuneYi && !hasBalloonReward;
+  const advancedButtonStyle = showMobileControls
+    ? balloonAdvancedButtonMobileStyle(W, H)
+    : balloonAdvancedButtonStyle(W, H);
 
   useStallRoundEndLeave(
     "balloonshoot",
@@ -744,34 +874,69 @@ export default function BalloonShootGame() {
           resourceLabel="子彈"
           resourceMax={INITIAL_BULLETS}
         />
-        <canvas
-          ref={canvasRef}
-          width={W}
-          height={H}
-          className={`block h-full w-full touch-none ${aimMode ? "cursor-none" : "cursor-default"}`}
-          onPointerMove={onPointerMove}
-          onPointerDown={onPointerDown}
-        />
+        <div className="balloonshoot-playfield">
+          <canvas
+            ref={canvasRef}
+            width={W}
+            height={H}
+            className={`balloonshoot-playfield__canvas touch-none ${aimMode ? "cursor-none" : "cursor-default"}`}
+            onPointerMove={onPointerMove}
+            onPointerDown={onPointerDown}
+            onPointerUp={onPointerUp}
+            onPointerCancel={onPointerCancel}
+          />
 
-        {showAdvancedButton ? (
-          <button
-            type="button"
-            className="game-advanced-img-btn"
-            disabled={gameOver || !layoutReady}
-            aria-label="進階模式"
-            onClick={onAdvancedButtonClick}
-          >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={
-                advancedStarted
-                  ? BALLOON_ADVANCED_BUTTON.pressed
-                  : BALLOON_ADVANCED_BUTTON.unpressed
-              }
-              alt=""
-              draggable={false}
-            />
-          </button>
+          {showAdvancedButton ? (
+            <button
+              type="button"
+              className="balloonshoot-advanced-btn"
+              style={advancedButtonStyle}
+              disabled={gameOver || !layoutReady}
+              aria-label="進階模式"
+              onClick={onAdvancedButtonClick}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={
+                  advancedStarted
+                    ? BALLOON_ADVANCED_BUTTON.pressed
+                    : BALLOON_ADVANCED_BUTTON.unpressed
+                }
+                alt=""
+                draggable={false}
+              />
+            </button>
+          ) : null}
+        </div>
+
+        {showMobileControls ? (
+          <div className="balloonshoot-mobile-controls">
+            <MobileTouchButton
+              placement="bottom-left"
+              variant="action"
+              active={aimMode}
+              disabled={gameOver || bullets <= 0}
+              aria-label="瞄準"
+              onPointerDown={onMobileAimPointerDown}
+              onPointerMove={onMobileAimPointerMove}
+              onPointerUp={(e) => finishMobileAimPointer(e, false)}
+              onPointerCancel={(e) => finishMobileAimPointer(e, true)}
+            >
+              瞄準
+            </MobileTouchButton>
+            <MobileTouchButton
+              placement="bottom-right"
+              variant="action"
+              disabled={gameOver || bullets <= 0 || !aimMode}
+              aria-label="發射"
+              onPointerDown={(e) => {
+                e.preventDefault();
+                fireFromMobile();
+              }}
+            >
+              發射
+            </MobileTouchButton>
+          </div>
         ) : null}
 
         <GameRoundEndModal

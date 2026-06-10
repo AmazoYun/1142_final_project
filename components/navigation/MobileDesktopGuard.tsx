@@ -4,11 +4,10 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
   isMobileDesktopGuardExempt,
-  MOBILE_DESKTOP_GUARD_MIN_WIDTH,
   shouldMobileDesktopGuardBlock,
 } from "@/lib/navigation/mobileDesktopGuard";
 
-const GUARD_MESSAGE = "請使用電腦瀏覽器遊玩，方可體驗完整遊戲";
+const GUARD_MESSAGE = "請將手機轉為橫向，或使用電腦瀏覽器遊玩";
 
 /** 攔截遊戲用的事件，但不 preventDefault，保留瀏覽器重新整理／上一頁等操作 */
 function stopGameEvent(event: Event) {
@@ -29,15 +28,14 @@ export default function MobileDesktopGuard() {
     const update = () => setBlocked(shouldMobileDesktopGuardBlock());
     update();
 
-    const mq = window.matchMedia(`(max-width: ${MOBILE_DESKTOP_GUARD_MIN_WIDTH - 1}px)`);
-    mq.addEventListener("change", update);
     window.addEventListener("resize", update);
     window.addEventListener("orientationchange", update);
+    window.screen.orientation?.addEventListener("change", update);
 
     return () => {
-      mq.removeEventListener("change", update);
       window.removeEventListener("resize", update);
       window.removeEventListener("orientationchange", update);
+      window.screen.orientation?.removeEventListener("change", update);
     };
   }, [pathname]);
 
@@ -91,6 +89,22 @@ export default function MobileDesktopGuard() {
     >
       <div className="mobile-desktop-guard__scrim" aria-hidden />
       <div className="mobile-desktop-guard__panel">
+        <div className="mobile-desktop-guard__rotate" aria-hidden>
+          <svg className="mobile-desktop-guard__rotate-icon" viewBox="0 0 120 120" fill="none">
+            <path
+              className="mobile-desktop-guard__rotate-arc"
+              d="M 88 28 A 40 40 0 1 0 92 72"
+              stroke="currentColor"
+              strokeWidth="5"
+              strokeLinecap="round"
+            />
+            <path
+              className="mobile-desktop-guard__rotate-head"
+              d="M 92 72 L 104 68 L 96 58 Z"
+              fill="currentColor"
+            />
+          </svg>
+        </div>
         <p id="mobile-desktop-guard-title" className="mobile-desktop-guard__message">
           {GUARD_MESSAGE}
         </p>

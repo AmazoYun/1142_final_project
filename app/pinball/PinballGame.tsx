@@ -5,6 +5,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useGameRoundActive } from "@/components/game/GameRoundActiveContext";
 import GameHudBar from "@/components/game/GameHudBar";
 import GameRoundEndModal from "@/components/game/GameRoundEndModal";
+import MobileTouchButton from "@/components/game/MobileTouchButton";
+import { useMobilePlay } from "@/lib/navigation/mobilePlay";
 import PinballMarbleHud from "@/components/pinball/PinballMarbleHud";
 import { awardStallReward } from "@/lib/collectibles/awardStallReward";
 import { acquireCollectible, hasCollectible } from "@/lib/collectibles/acquireItem";
@@ -161,8 +163,14 @@ export default function PinballGame() {
   const gameOverRef = useRef(false);
   const roundEndHandledRef = useRef(false);
   const resetGameRef = useRef<() => void>(() => {});
+  const mobileChargeRef = useRef<{ start: () => void; stop: () => void }>({
+    start: () => {},
+    stop: () => {},
+  });
 
   const router = useRouter();
+  const { showMobileControls } = useMobilePlay();
+  const [mobileCharging, setMobileCharging] = useState(false);
   const tokens = useTokenStore((s) => s.tokens);
   const hydrateCollectibles = useCollectibleStore((s) => s.hydrate);
   const hasFortuneJia = useCollectibleStore((s) => s.hasAcquired("fortune-slip-jia"));
@@ -178,7 +186,6 @@ export default function PinballGame() {
   const [rewardText, setRewardText] = useState("");
   const [rewardVisible, setRewardVisible] = useState(false);
   const [chargeTier, setChargeTier] = useState<ChargeTier>("low");
-  const [status, setStatus] = useState("");
   const [gameOver, setGameOver] = useState(false);
   const [roundEnd, setRoundEnd] = useState<{ score: number; lotteryYuan: number } | null>(null);
   const { setRoundActive } = useGameRoundActive();
@@ -215,7 +222,6 @@ export default function PinballGame() {
     const result = acquireCollectible("pinball-marble");
     if (result.success) {
       playImpactSound();
-      setStatus("已取得彈珠，可帶至套圈圈使用");
     }
   }, [hasFortuneJia, hasPinballMarble, hasRingTossReward]);
 
@@ -236,18 +242,12 @@ export default function PinballGame() {
     const loadLayout = async () => {
       try {
         const res = await fetch("/api/pinball-layout");
-        if (!res.ok) {
-          setStatus("障礙物布局載入失敗");
-          return;
-        }
+        if (!res.ok) return;
         const data = migrateToUnifiedLayout(await res.json());
-        if (data.obstacles.length === 0) {
-          setStatus("障礙物布局為空，請還原 data/pinball-layout.saved.json");
-          return;
-        }
+        if (data.obstacles.length === 0) return;
         layoutRef.current = data;
       } catch {
-        setStatus("障礙物布局載入失敗");
+        /* layout load failed */
       }
     };
     loadLayout();
@@ -345,6 +345,7 @@ export default function PinballGame() {
       chargeRatioRef.current = 0;
       setChargeRatio(0);
       setChargeTier("low");
+      setMobileCharging(false);
       sfx.stopPress();
       scoreMultiplierRef.current = 1;
       obstacleStuckRef.current = null;
@@ -353,7 +354,6 @@ export default function PinballGame() {
 
     const spawnNextBall = () => {
       resetBall();
-      setStatus("新彈珠已就位，按住空白鍵蓄力");
     };
 
     const launch = () => {
@@ -376,7 +376,6 @@ export default function PinballGame() {
       lowPowerFallbackRef.current = p < LOW_TIER_MAX;
       railSpeedRef.current = 0.016 + p * 0.03;
       ball.vel = { x: 0, y: 0 };
-      setStatus(p >= 0.999 ? "滿蓄力發射！本局得分 x1.2" : tier === "high" ? "高力度發射！" : tier === "mid" ? "中力度發射！" : "低力度發射");
     };
 
     const collideWalls = () => {
@@ -606,6 +605,12 @@ export default function PinballGame() {
       return "×2";
     };
 
+    const adjustCurrentMarbleScore = (factor: number) => {
+      const marbleScore = roundScoreRef.current;
+      const adjusted = Math.floor(marbleScore * factor);
+      scoreRef.current = clampScore(scoreRef.current - marbleScore + adjusted);
+    };
+
     const resolveChannel = (forcedLane?: number) => {
       const lane = forcedLane ?? channelLaneFromX(ball.pos.x);
       const prevScore = scoreRef.current;
@@ -615,7 +620,7 @@ export default function PinballGame() {
         ballsRef.current += 1;
         setBalls(ballsRef.current);
       } else if (lane === 1) {
-        scoreRef.current = clampScore(Math.floor(scoreRef.current * 0.5));
+        adjustCurrentMarbleScore(0.5);
       } else if (lane === 2) {
         if (!hasCollectible("rust-coin")) {
           const reward = awardStallReward("pinball");
@@ -630,7 +635,7 @@ export default function PinballGame() {
       } else if (lane === 4) {
         scoreRef.current = clampScore(scoreRef.current - CHANNEL_PENALTY_POINTS);
       } else {
-        scoreRef.current = clampScore(scoreRef.current * 2);
+        adjustCurrentMarbleScore(2);
       }
       const gained = scoreRef.current - prevScore;
       roundScoreRef.current += gained;
@@ -639,7 +644,6 @@ export default function PinballGame() {
       flashScore(lane === 4 ? "down" : "up");
       if (msg) {
         showRewardNotice(msg);
-        setStatus(msg);
       }
       runDoneRef.current = true;
       ball.launched = false;
@@ -675,7 +679,6 @@ export default function PinballGame() {
           spawnNextBall();
         } else {
           reportStallScore("pinball", scoreRef.current);
-          setStatus(`彈珠用完，總分 ${scoreRef.current}`);
           if (!roundEndHandledRef.current) {
             roundEndHandledRef.current = true;
             const summary = finalizeGameRound(scoreRef.current);
@@ -757,7 +760,6 @@ export default function PinballGame() {
               scoreMultiplierRef.current = 1;
               roundScoreRef.current = 0;
               resetBall();
-              setStatus("力度不足，彈珠沿軌道滑回去（不消耗彈珠）");
               sfx.stopRolling();
             } else if (t >= 1) {
               railPhaseRef.current = 1;
@@ -834,6 +836,7 @@ export default function PinballGame() {
           chargingRef.current = false;
           chargeRatioRef.current = 0;
           setChargeRatio(0);
+          setMobileCharging(false);
           sfx.stopPress();
         }
         return;
@@ -846,7 +849,6 @@ export default function PinballGame() {
           chargeStartRef.current = performance.now();
           chargeRatioRef.current = 0;
           setChargeRatio(0);
-          setStatus("蓄力中...");
           sfx.startPress();
         }
       }
@@ -881,10 +883,30 @@ export default function PinballGame() {
       setGameOver(false);
       setRoundEnd(null);
       scoreMultiplierRef.current = 1;
-      setStatus("按住空白鍵蓄力，放開發球");
       resetBall();
     };
     resetGameRef.current = resetGame;
+
+    mobileChargeRef.current = {
+      start: () => {
+        if (isGameInputBlocked()) return;
+        if (gameOverRef.current) return;
+        if (ball.launched || runDoneRef.current || chargingRef.current || ballsRef.current <= 0) return;
+        chargingRef.current = true;
+        chargeStartRef.current = performance.now();
+        chargeRatioRef.current = 0;
+        setChargeRatio(0);
+        setMobileCharging(true);
+        sfx.startPress();
+      },
+      stop: () => {
+        if (!chargingRef.current) return;
+        chargingRef.current = false;
+        setMobileCharging(false);
+        sfx.stopPress();
+        launch();
+      },
+    };
 
     const onKeyUp = (e: KeyboardEvent) => {
       if (isGameInputBlocked()) return;
@@ -933,14 +955,36 @@ export default function PinballGame() {
             height={BOARD_HEIGHT}
             className="block h-full w-full touch-none"
           />
+
+          {showMobileControls ? (
+            <div className="pinball-mobile-charge">
+              <MobileTouchButton
+                placement="bottom-center"
+                variant="action"
+                active={mobileCharging}
+                disabled={gameOver || balls <= 0}
+                aria-label="蓄力發球"
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  mobileChargeRef.current.start();
+                }}
+                onPointerUp={(e) => {
+                  e.preventDefault();
+                  mobileChargeRef.current.stop();
+                }}
+                onPointerLeave={() => {
+                  if (mobileCharging) mobileChargeRef.current.stop();
+                }}
+                onPointerCancel={() => {
+                  if (mobileCharging) mobileChargeRef.current.stop();
+                }}
+              >
+                蓄力
+              </MobileTouchButton>
+            </div>
+          ) : null}
         </div>
       </div>
-
-      {status ? (
-        <div className="flex shrink-0 items-center justify-center px-3 pb-2 text-xs game-message">
-          <span>{status}</span>
-        </div>
-      ) : null}
 
       {rewardText ? (
         <div

@@ -97,7 +97,7 @@ export default function LotteryPickupBar({ spawn, worldX, groundY, glowing, visi
         <img
           src={ticketSrc}
           alt=""
-          className="hub-lottery-drop__ticket"
+          className="hub-lottery-drop__ticket hub-lottery-drop__ticket--lottery"
           draggable={false}
         />
       </div>

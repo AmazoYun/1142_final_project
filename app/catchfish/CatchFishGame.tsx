@@ -5,6 +5,8 @@ import React, { useEffect, useRef, useState, useSyncExternalStore } from "react"
 import CatchfishNetHud from "@/components/catchfish/CatchfishNetHud";
 import GameHudBar from "@/components/game/GameHudBar";
 import GamePageHeader from "@/components/game/GamePageHeader";
+import MobileTouchButton from "@/components/game/MobileTouchButton";
+import { useMobilePlay } from "@/lib/navigation/mobilePlay";
 import {
   GameRoundActiveProvider,
   useGameRoundActive,
@@ -275,6 +277,7 @@ function CatchFishGameInner() {
   const sevenFishBonusGivenRef = useRef(false);
   const roundEndHandledRef = useRef(false);
   const sfxRef = useRef<CatchFishSoundFx | null>(null);
+  const fishVisualScaleRef = useRef(1);
 
   const tokens = useTokenStore((s) => s.tokens);
   const [roundEnd, setRoundEnd] = useState<{ score: number; lotteryYuan: number } | null>(null);
@@ -292,6 +295,24 @@ function CatchFishGameInner() {
   const pendingAcquireDialogue = useCollectibleStore((s) => s.pendingAcquireDialogue);
   const pendingAcquireAnimation = useCollectibleStore((s) => s.pendingAcquireAnimation);
   const { setRoundActive } = useGameRoundActive();
+  const { showMobileControls } = useMobilePlay();
+  const [scoopHeld, setScoopHeld] = useState(false);
+
+  useEffect(() => {
+    fishVisualScaleRef.current = showMobileControls ? 0.5 : 1;
+  }, [showMobileControls]);
+
+  const startScoopHold = () => {
+    if (isGameInputBlocked()) return;
+    if (statusRef.current !== "playing" || throwBackExit || hasCatchfishReward) return;
+    spaceHeldRef.current = true;
+    setScoopHeld(true);
+  };
+
+  const stopScoopHold = () => {
+    spaceHeldRef.current = false;
+    setScoopHeld(false);
+  };
 
   /**
    * statusRef — 鏡像 store.status，供 RAF 內的 update() 讀取
@@ -1105,6 +1126,21 @@ function CatchFishGameInner() {
 
       const scoop = scoopRef.current;
       const shakeT = now * 0.001;
+      const fishVis = fishVisualScaleRef.current;
+      const withFishVis = (draw: {
+        x: number;
+        y: number;
+        angle: number;
+        r: number;
+        spriteIndex: number;
+        scaleMul?: number;
+        alpha?: number;
+        shakeX?: number;
+        shakeY?: number;
+      }) => ({
+        ...draw,
+        scaleMul: (draw.scaleMul ?? 1) * fishVis,
+      });
 
       for (const fish of fishRef.current) {
         const isScoopTarget = scoop?.fishId === fish.id;
@@ -1115,63 +1151,81 @@ function CatchFishGameInner() {
           ? Math.cos(shakeT * 47) * 5 + Math.cos(shakeT * 73) * 2
           : 0;
 
-        drawFishSprite(ctx, assetsRef.current, {
-          ...fish,
-          alpha: fish.spawnAlpha * fishFadeMul,
-          shakeX,
-          shakeY,
-        });
+        drawFishSprite(
+          ctx,
+          assetsRef.current,
+          withFishVis({
+            ...fish,
+            alpha: fish.spawnAlpha * fishFadeMul,
+            shakeX,
+            shakeY,
+          }),
+        );
       }
 
       if (scoop && !throwBackSequenceRef.current) {
         const fish = fishRef.current.find((f) => f.id === scoop.fishId);
-        if (fish) drawScoopProgressBar(ctx, fish.x, fish.y, fish.r, scoop.progress);
+        if (fish) {
+          drawScoopProgressBar(ctx, fish.x, fish.y, fish.r * fishVis, scoop.progress);
+        }
       }
 
       const throwDrag = throwDragRef.current;
       for (let i = 0; i < caughtDisplayRef.current.length; i++) {
         const caught = caughtDisplayRef.current[i];
         if (throwDrag && throwDrag.fishIndex === i) continue;
-        drawFishSprite(ctx, assetsRef.current, { ...caught, alpha: fishFadeMul });
+        drawFishSprite(ctx, assetsRef.current, withFishVis({ ...caught, alpha: fishFadeMul }));
       }
       if (throwDrag) {
         const caught = caughtDisplayRef.current[throwDrag.fishIndex];
         if (caught) {
-          drawFishSprite(ctx, assetsRef.current, {
-            ...caught,
-            x: throwDrag.x,
-            y: throwDrag.y,
-            alpha: fishFadeMul,
-          });
+          drawFishSprite(
+            ctx,
+            assetsRef.current,
+            withFishVis({
+              ...caught,
+              x: throwDrag.x,
+              y: throwDrag.y,
+              alpha: fishFadeMul,
+            }),
+          );
         }
       }
 
       const catchAnim = catchAnimRef.current;
       if (catchAnim) {
         const pose = catchAnimPose(catchAnim);
-        drawFishSprite(ctx, assetsRef.current, {
-          x: pose.x,
-          y: pose.y,
-          angle: pose.angle,
-          r: catchAnim.r,
-          spriteIndex: catchAnim.spriteIndex,
-          scaleMul: pose.scale,
-          alpha: fishFadeMul,
-        });
+        drawFishSprite(
+          ctx,
+          assetsRef.current,
+          withFishVis({
+            x: pose.x,
+            y: pose.y,
+            angle: pose.angle,
+            r: catchAnim.r,
+            spriteIndex: catchAnim.spriteIndex,
+            scaleMul: pose.scale,
+            alpha: fishFadeMul,
+          }),
+        );
       }
 
       const escapeAnim = escapeAnimRef.current;
       if (escapeAnim) {
         const pose = escapeAnimPose(escapeAnim);
-        drawFishSprite(ctx, assetsRef.current, {
-          x: pose.x,
-          y: pose.y,
-          angle: pose.angle,
-          r: escapeAnim.r,
-          spriteIndex: escapeAnim.spriteIndex,
-          scaleMul: pose.scaleMul,
-          alpha: pose.alpha * fishFadeMul,
-        });
+        drawFishSprite(
+          ctx,
+          assetsRef.current,
+          withFishVis({
+            x: pose.x,
+            y: pose.y,
+            angle: pose.angle,
+            r: escapeAnim.r,
+            spriteIndex: escapeAnim.spriteIndex,
+            scaleMul: pose.scaleMul,
+            alpha: pose.alpha * fishFadeMul,
+          }),
+        );
       }
 
       effects.drawOverlays(ctx);
@@ -1336,6 +1390,33 @@ function CatchFishGameInner() {
           撈網損壞！更換新網（剩餘 {netsRemaining} 張）
         </div>
       )}
+
+      {showMobileControls && status === "playing" && !throwBackExit && !hasCatchfishReward ? (
+        <div className="catchfish-mobile-controls">
+          <MobileTouchButton
+            placement="left"
+            variant="action"
+            active={scoopHeld}
+            aria-label="捕撈，長按撈魚"
+            onPointerDown={(e) => {
+              e.preventDefault();
+              startScoopHold();
+            }}
+            onPointerUp={(e) => {
+              e.preventDefault();
+              stopScoopHold();
+            }}
+            onPointerLeave={() => {
+              if (scoopHeld) stopScoopHold();
+            }}
+            onPointerCancel={() => {
+              if (scoopHeld) stopScoopHold();
+            }}
+          >
+            捕撈
+          </MobileTouchButton>
+        </div>
+      ) : null}
 
       <GameRoundEndModal
         open={isGameOver && roundEnd !== null && !throwBackExit}

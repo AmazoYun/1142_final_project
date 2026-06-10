@@ -105,7 +105,7 @@ export default function StallEnterBar({
         transform: "translate(-50%, -50%)",
       }}
     >
-      <div className="stall-enter-stack pointer-events-auto flex flex-col items-center gap-1.5">
+      <div className="stall-enter-stack stall-enter-stack--game pointer-events-auto flex flex-col items-center gap-1.5">
         <p className="stall-enter-title">{script.title}</p>
         <button
           type="button"

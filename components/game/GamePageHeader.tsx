@@ -8,6 +8,7 @@ import GameExitConfirmModal from "@/components/game/GameExitConfirmModal";
 import { useGameRoundActiveOptional } from "@/components/game/GameRoundActiveContext";
 import { navigateToMarketFromGame } from "@/lib/economy/returnToMarket";
 import { useGameExitGuard } from "@/lib/navigation/useGameExitGuard";
+import { useMobilePlay } from "@/lib/navigation/mobilePlay";
 
 type Props = {
   title: string;
@@ -21,21 +22,26 @@ export default function GamePageHeader({ title, backpack, onBack }: Props) {
   const roundCtx = useGameRoundActiveOptional();
   const roundActive = roundCtx?.roundActive ?? false;
   const { confirmOpen, requestExit, confirmExit, cancelExit } = useGameExitGuard(roundActive);
+  const { showMobileControls } = useMobilePlay();
 
   const leaveGame = onBack ?? (() => void navigateToMarketFromGame(router));
 
   return (
     <>
-      <header className="game-header shrink-0 flex items-center justify-between px-4 py-2.5">
+      <header
+        className={`game-header shrink-0 flex items-center justify-between${showMobileControls ? " game-header--compact" : ""}`}
+      >
         <button
           type="button"
-          className="text-xs tracking-widest text-foreground/70 uppercase hover:text-foreground transition-colors"
+          className="game-header__back text-xs tracking-widest text-foreground/70 uppercase hover:text-foreground transition-colors"
           onClick={() => requestExit(leaveGame)}
         >
           ← 返回夜市
         </button>
-        <h1 className="game-title text-sm sm:text-base">{title}</h1>
-        <div className="relative flex gap-2 items-center shrink-0">
+        <h1 className="game-header__title game-title text-sm sm:text-base">
+          {title}
+        </h1>
+        <div className="game-header__tools relative flex gap-2 items-center shrink-0">
           <TokenDisplay inspectable={false} />
           {backpack ?? <GameBackpackButton />}
         </div>

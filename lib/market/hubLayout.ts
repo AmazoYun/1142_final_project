@@ -292,8 +292,8 @@ export const EDGE_STALL_Z_INDEX = EDGE_STALL_Z;
 /** 高於前景陰影層 (160)，確保可點擊 */
 export const ENTER_BAR_Z_INDEX = 170;
 export const PLAYER_Z_INDEX = 150;
-/** 地上彩券貼圖（低於玩家，貼近路面） */
-export const LOTTERY_GROUND_Z_INDEX = 130;
+/** 地上彩券／籤詩貼圖（高於前景遮罩 152、玩家 150，低於陰影 160） */
+export const LOTTERY_GROUND_Z_INDEX = 155;
 /** 地上拾取道具 UI 與貼圖的垂直間距 */
 export const PICKUP_ABOVE_GROUND_PX = 30;
 /** 地上拾取貼圖距離腳底線的偏移 */
