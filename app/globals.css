@@ -1768,7 +1768,7 @@ body {
 .ringtoss-stage .game-hud-bar--ringtoss .game-hud-stat--score,
 .ringtoss-stage .game-hud-bar--ringtoss .game-hud-stat--resource {
   position: absolute;
-  top: 0;
+  top: 20px;
   width: 4.75rem;
   min-width: 0;
   flex: none;

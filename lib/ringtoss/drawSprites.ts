@@ -160,8 +160,8 @@ export function drawBonusBottleGlows(
   cw: number,
   ch: number,
 ) {
-  for (const { gx, gy, bonus, hit } of targets) {
-    if (!bonus || hit) continue;
+  for (const { gx, gy, bonus, hit, broken } of targets) {
+    if (!bonus || hit || broken) continue;
     drawBottleImageGlow(
       ctx,
       assets,

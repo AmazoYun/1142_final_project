@@ -317,9 +317,12 @@ function RingTossGameInner() {
     throwIdRef.current += 1;
     if (flyTimerRef.current) clearTimeout(flyTimerRef.current);
     landedRingsRef.current = [];
-    targetsRef.current = resetTargets(playableCellsRef.current, true).map((t) =>
-      t.gx === brokenGx && t.gy === brokenGy ? { ...t, broken: true } : t,
+    const base = playableCellsRef.current.map((t) =>
+      t.gx === brokenGx && t.gy === brokenGy
+        ? { ...t, broken: true }
+        : { ...t, broken: false },
     );
+    targetsRef.current = assignBonusBottles(base);
     ringRef.current = createRing();
     aimRef.current = initialAim();
     lastCycleTickRef.current = performance.now();

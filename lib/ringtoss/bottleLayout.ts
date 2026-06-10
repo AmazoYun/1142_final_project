@@ -263,7 +263,7 @@ export function buildBottleTargets(
   return Array.from(selected.values()).map(toTarget);
 }
 
-/** 每局從現有酒瓶中隨機抽出 N 個作為紅光目標，並重置命中狀態 */
+/** 每局從現有酒瓶中隨機抽出 N 個作為紅光目標，並重置命中狀態（已打破的瓶不會入選） */
 export function assignBonusBottles(
   targets: CellTarget[],
   count = BONUS_BOTTLE_COUNT,
@@ -271,9 +271,10 @@ export function assignBonusBottles(
 ): CellTarget[] {
   if (targets.length === 0) return [];
 
-  const pickCount = Math.min(count, targets.length);
+  const eligible = targets.filter((t) => !t.broken);
+  const pickCount = Math.min(count, eligible.length);
   const pickedKeys = new Set(
-    shuffle(targets, random)
+    shuffle(eligible, random)
       .slice(0, pickCount)
       .map((t) => cellKey(t.gx, t.gy)),
   );
@@ -281,7 +282,7 @@ export function assignBonusBottles(
   return targets.map((t) => ({
     ...t,
     hit: false,
-    bonus: pickedKeys.has(cellKey(t.gx, t.gy)),
+    bonus: !t.broken && pickedKeys.has(cellKey(t.gx, t.gy)),
   }));
 }
 
